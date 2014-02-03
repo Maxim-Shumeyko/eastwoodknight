@@ -33,6 +33,10 @@ FUNCTIONS:
     
 """
 
+def probe_func():
+	pass
+
+
 def read_file(filename,strlength = 14,write_file=False,energy_scale=False,time_corr=False,strip_convert=True):
      data = np.fromfile(filename, dtype = 'uint16', count = -1, sep = '').reshape(-1,strlength)#[:,0:9]
      #beam marker
