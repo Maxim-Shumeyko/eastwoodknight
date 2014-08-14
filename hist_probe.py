@@ -1,17 +1,20 @@
 # -*- coding: cp1251 -*-
 ''' Модуль предназначен для выделения области гистограммы и последующей
 передачи этих данных для обработки. You can use this module to dole out part of
-the histogramm to pass the data for next processing. 
+a histogramm to pass the data for processing. 
+
 Пример использования:
     from hist_probe import fit_commander
     fig,ax = plt.subplots()
     data = np.random.randn(800)  
     y,x,patches = ax.hist(data,30,picker = 5) 
-    # в качестве аргумента передаются система координат (axes)
-    # данные о гистограмме y, x
-    # и метод обработки данных ( method(datax,datay) )
+    # в качестве аргумента передаются (self,ax,y,x, method,method2=None):
+        система координат (axes)
+        данные о гистограмме y, x
+        метод обработки данных ( method(datax,datay) ) для ЛКМ
+        доп метод обработки для средней кнопки СКМ
     # формат данных (datax,datay), type(datax) == []
-    def method(x,y): print x,y 
+    def method(x,y): print x[1:],y 
     br = fit_commander(ax,y,x,method)
     fig.canvas.mpl_connect('button_press_event',
                             lambda event: evbr.onclick(event) )
@@ -25,7 +28,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 class fit_commander:
-    def __init__(self,ax,y,x, method):
+    def __init__(self,ax,y,x, method,method2=None):
         self.y = y
         self.x = x
         self.clicks = 0
@@ -33,10 +36,14 @@ class fit_commander:
                                 visible = True)
         self.datax, self.datay = [],[]
         self.method = method
+        self.method2 = method2
 
     def onclick(self, event):
         # обработать все данные гистограммы
         if event.dblclick:
+            if self.method2:
+                    self.method2(self.x,self.y)
+                    return
             self.method(self.x,self.y )
             return
         
@@ -90,7 +97,7 @@ if __name__ == '__main__':
     fig,ax = plt.subplots()
     data = np.random.randn(800)  
     y,x,patches = ax.hist(data,30,picker = 5)
-    def method(x,y): print x,y        
+    def method(x,y): print x[1:],y        
     br = fit_commander(ax,y,x,method)
     fig.canvas.mpl_connect('button_press_event',
                            lambda event:br.onclick(event))

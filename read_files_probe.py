@@ -3,11 +3,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt 
 from pandas import Series as Ser, DataFrame as DF
-from mayavi import mlab
-from matplotlib import cm
 #import Visualisator
-
-
+import time as t
 """  
 ######################################################################
 The module is for data processing on experiment of superheavie synthesis (GFS).
@@ -258,7 +255,7 @@ def read_files(filenames,**argv):
             
         
 
-def get_front_spectrs(data,energy_scale=True,tof=False,visualize=True): 
+def get_front_spectrs(data,energy_scale=True,tof=False): 
     #read data 
     sample = read_files(data)
     
@@ -271,16 +268,14 @@ def get_front_spectrs(data,energy_scale=True,tof=False,visualize=True):
     spectr = sample['channel'].groupby(sample['strip'])
     
     #choose scale
-    ysize = sample['strip'].max()
     if energy_scale:
-        xsize = 20000
+        size = 20000
     else:
-        xsize = 8192
-        
+        size = 8192
     #collect histograms
     list_hist = []
     for name,group in spectr:
-        list_hist.append( np.histogram(group,bins = np.arange(xsize+2))[0][1:] )
+        list_hist.append( np.histogram(group,bins = np.arange(size))[0][1:] )
     hist = np.vstack( (list_hist[0],list_hist[1]))
     for i in xrange(2,len(list_hist)):
         hist = np.vstack( (hist,list_hist[i]))  
@@ -290,35 +285,20 @@ def get_front_spectrs(data,energy_scale=True,tof=False,visualize=True):
         sum_spectr += list_hist[i]
     
      #visualisation
-    if visualize:
-        #matplotlib visualization
-        
-        fig = plt.figure()
-        ax1 = fig.add_axes([0.125, 0.35, 0.8, 0.6])
-        #ax1 = fig.gca(projection='3d')
-        #ax2 = fig.add_subplot(2,1,2,sharex = ax1)
-        ax2 = fig.add_axes([0.125, 0.05, 0.64, 0.25],sharex = ax1)
-        x = np.arange(1,xsize)
-        y = np.arange(1,ysize+1)
-        xgrid, ygrid = np.meshgrid(x,y)
-        hist = hist[:,:-1]
-        hist[ hist > hist.max()/25 ] = hist.max()/25
-        #ax1.plot_surface(xgrid, ygrid, hist, cmap=cm.jet, rstride = 5, cstride = 5)
-        a = ax1.pcolormesh(x,y,hist)
-        #a = ax1.imshow(hist)
-        h_min, h_max = hist.min(), hist.max()
-        ticks = np.linspace(h_min,h_max,40)
-        ax2.plot(sum_spectr,'k',linestyle='steps')
-        fig.colorbar(a,ax=ax1,ticks=ticks)
-        axis = [1,x.max(),1,y.max()]
-        ax1.axis( axis )
-        ax2.axis( xmax = xsize )
-        plt.show()
-        
-        #mayavi visualization
-        #mlab.imshow(hist,colormap="gist_earth")
-        #mlab.imshow(hist, colormap='gist_earth')
-    
+    fig = plt.figure()
+    ax1 = fig.add_axes([0.125, 0.35, 0.8, 0.6])
+    #ax2 = fig.add_subplot(2,1,2,sharex = ax1)
+    ax2 = fig.add_axes([0.125, 0.05, 0.64, 0.25],sharex = ax1)
+    x = np.arange(1,size)
+    y = np.arange(1,48)
+    hist = hist[:,:-1]
+    a = ax1.pcolormesh(x,y,hist)
+    ax2.plot(sum_spectr,'k',linestyle='steps')
+    fig.colorbar(a,ax=ax1)
+    axis = [1,8192,1,47]
+    ax1.axis( axis )
+    ax2.axis( xmax = size )
+    plt.show()
     return hist,sum_spectr
    
 
@@ -334,7 +314,7 @@ def pos_distr(data,tof=False,**argv):
     hist_b1 = np.histogram(sample['b_strip 1'][mask],bins = np.arange(0,129))
     hist_b2 = np.histogram(sample['b_strip 2'][mask],bins = np.arange(0,129))
     
-    fig, ax = plt.subplots(2,2)
+    fig, ax = plt.subplots(2,2,sharex = True)
     ax[0,0].plot(hist_f[0],linestyle='steps')
     ax[0,1].plot(hist_b1[0],linestyle='steps')
     ax[1,1].plot(hist_b2[0],linestyle='steps')
@@ -366,23 +346,8 @@ def pos_distr2d(data):
     plt.show()
     
     return spectr
-
-def outputf(data,name):
-    data.to_csv('chain'+str(name))
     
-
-def find_chaines(data,dt):
-    frame = read_files(data)
-    frame = frame[ 
-        (frame['beam_marker']==0) &
-        (frame['tof']==0) ]    
-    pos_distr = frame.groupby( 
-        [frame['strip'], frame['b_strip 1']] )   
-    for name, group in pos_distr:
-        time_group = group['time'].diff()
-        group = group[ time_group < dt ]
-        outputf(group,name)
-        
+    
     
 def read_times(filename):
      data = np.fromfile(filename, dtype = 'uint16', count = -1, sep = '').reshape(-1,12)[:,0:5]
@@ -455,29 +420,14 @@ def time_sinc_distr(filename):
 def show_front(filename,strip=1):
     frame = read_files(filename)
     spectr
-    
 """
-def diff_time_distr(filename,xmax=100):
-    frame = read_file(filename)['time']
-    frame = frame.diff()
-    frame = frame[frame<200]
-    hist,bins = np.histogram(frame,bins=np.arange(0,xmax,5))
-    plt.grid(True)
-    plt.xlabel('mks')
-    plt.ylabel('counts')
-    plt.plot(bins[1:],hist,linestyle='steps',linewidth=3,color='b')
-    plt.title('Time differences in interval 0-%d mkseconds' % xmax)
-    plt.show()    
-    
 if __name__ == '__main__':
-    print 'is run'
     #print read_times('tsn.562')
     #time_sinc_distr('tsn.605')
-    frame = read_file('tsn.456')
     #frame = read_files('tsn.611-tsn.615')
     #frame1 = read_files('tsn.459',strlength=14,energy_scale=True)
-    #pos_distr('tsn.459-tsn.461',tof = False, strip_convert=True)
-    hist,sum_spectr = get_front_spectrs(frame)
+    pos_distr('tsn.459-tsn.461',tof = False, strip_convert=True)
+    hist,sum_spectr = get_front_spectrs(frame1)
     # tof_distr('tsn.371')
     #frame2 = read_files('tsn.612,tsn.613')
     #time_sinc_distr('tsn.606')
