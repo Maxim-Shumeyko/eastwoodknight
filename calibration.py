@@ -14,7 +14,7 @@ from scipy.optimize import leastsq
 
 
 
-def calibrate_area(sample,xmin,xmax,search_peak_threshold=0.25,visualize=True):  
+def calibrate_area(sample,xmin,xmax,threshold=0.25,visualize=True):  
     """ Return xpeaks, solution (result of linear fitting of spectrum)"""
     """MAKE AXES"""
     if visualize:
@@ -32,7 +32,7 @@ def calibrate_area(sample,xmin,xmax,search_peak_threshold=0.25,visualize=True):
     hist = sample
     #xsample = np.arange(xmin,xmax)
     xsample = np.arange(xmin,xmin+len(hist))
-    xpeaks,ypeaks = search_peaks(xsample,hist,threshold=search_peak_threshold)
+    xpeaks,ypeaks = search_peaks(xsample,hist,threshold=threshold)
     #collecting the the largest 11 peaks
     dic_peaks = dict( zip(ypeaks,xpeaks) )
     dict1 = {}
@@ -141,7 +141,7 @@ def calibrate_area(sample,xmin,xmax,search_peak_threshold=0.25,visualize=True):
     return xpeaks,solution
     
 
-def calibrate_spectrum(filename,xmin,xmax,strips,output_file=None,**argv):
+def calibrate_spectrum(filename,xmin,xmax,strips,output_file=None,args={},search_agrs={}):
     """ 
     Function is for calibration of spectrs gotten from group of files
         filename - names of the files to open 'str'
@@ -151,7 +151,7 @@ def calibrate_spectrum(filename,xmin,xmax,strips,output_file=None,**argv):
         output_file - name of ouput file contains a report 'str'
     Output: -
     """
-    sample,sum_spectr = get_front_spectrs(filename,**argv)
+    sample,sum_spectr = get_front_spectrs(filename,**args)
     
     for ind in strips:#np.arange(len(sample)):#arange(0,3):
         hist = sample[ind]   
@@ -164,10 +164,12 @@ def calibrate_spectrum(filename,xmin,xmax,strips,output_file=None,**argv):
         #plt.show()
     # Собственно калибровка
         try:
-            xpeaks,solution = calibrate_area(hist,xmin,xmax,visualize=True)
+            xpeaks,solution = calibrate_area(hist,xmin,xmax,**search_agrs)
             print make_report(xpeaks,solution,ind,filename='clbr_coef.txt') 
         except ValueError:
             print '%d   Error occured: the spectr %d hasn\'t been calibrated \n'%(ind+1,ind+1)
+        except IndexError:
+            print '%d   Error occured: possibly wrong area of calibration (xmin,xmax) \n'%(ind+1)
 
 def make_report(xpeaks,solution,ind,filename=None):
     energies = np.array([6040,6143,6264,6899,7137,7922,8699,9265]) 
@@ -261,9 +263,10 @@ if __name__ == '__main__':
             print '%d   Error occured: the spectr %d hasn\'t been calibrated \n'%(ind+1,ind+1)
     """
         
-    filename = 'tsn.456-tsn.458'
+    filename = 'tsn.456-tsn.461'
     arguments = {'strip_convert':'True','energy_scale':'False','threshold':1,'visualize':'False'}
-    xmin, xmax = 2000, 3700
+    search_arg = {'threshold':0.25,'visualize':'True'}
+    xmin, xmax = 2170, 3700
     strips = np.arange(0,47)
-    calibrate_spectrum(filename,xmin,xmax,strips,**arguments)
+    calibrate_spectrum(filename,xmin,xmax,strips,arguments,search_arg)
     
