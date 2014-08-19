@@ -46,7 +46,7 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
          print 'Flag strip_conv'
          
      indexes = data[:,0] % 16 
-     strips = np.array(data[:,2] / 4096 + 1,dtype='uint16')
+     strips = np.array(data[:,2] / 4096 +1,dtype='uint16')
      strips = np.where( indexes < 3, indexes*16+strips, strips)
      channel = data[:,1] % 8192
      
@@ -258,9 +258,18 @@ def read_files(filenames,**argv):
             
         
 
-def get_front_spectrs(data,energy_scale=True,tof=False,visualize=True): 
+def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,**argv): 
+    """ 
+    Get amplitude spectrs from raw data.
+        energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
+        tof - choose the type of include events by the TOF-mark
+        threshold [0,1) - level of cutting of specturum (comparable with the max-height peak)
+        visualize - show the distribution
+        **argv - arguments to pass to read_files function
+    Output: spectrs( 2Darray [0..47]x[0..8191] ),summary spectr
+    """
     #read data 
-    sample = read_files(data)
+    sample = read_files(data,**argv)
     
     #tof 
     if tof:
@@ -302,7 +311,7 @@ def get_front_spectrs(data,energy_scale=True,tof=False,visualize=True):
         y = np.arange(1,ysize+1)
         xgrid, ygrid = np.meshgrid(x,y)
         hist = hist[:,:-1]
-        hist[ hist > hist.max()/25 ] = hist.max()/25
+        hist[ hist > hist.max()*threshold ] = hist.max()*threshold
         #ax1.plot_surface(xgrid, ygrid, hist, cmap=cm.jet, rstride = 5, cstride = 5)
         a = ax1.pcolormesh(x,y,hist)
         #a = ax1.imshow(hist)

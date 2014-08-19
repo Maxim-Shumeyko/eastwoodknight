@@ -101,7 +101,7 @@ def smooth(x,window_len=11,window='hanning'):
     return y
   
   
-def search_peaks(data_x,data_y,sigma = 30,wavelet='ricker',threshold = 0.15):
+def search_peaks(data_x,data_y,sigma = 30,wavelet='ricker',threshold = 0.10):
     """
     Based on scipy.signal.find_peaks_cwt peak-finding tool.
     threshold parameter allow to cut spectrum on the given level.
@@ -123,9 +123,9 @@ def search_peaks(data_x,data_y,sigma = 30,wavelet='ricker',threshold = 0.15):
     
      
     xpeaks,ypeaks = np.array(xpeaks),np.array(ypeaks)
-    numbers = ypeaks>(ypeaks.max()/6)
+    numbers = ypeaks>(ypeaks.max()*threshold)
     ypeaks = ypeaks[numbers]
-    xpeaks = xpeaks[numbers]  
+    xpeaks = xpeaks[numbers]-1
     return xpeaks, ypeaks
 
     
