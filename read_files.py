@@ -49,6 +49,7 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
      strips = np.array(data[:,2] / 4096 +1,dtype='uint16')
      strips = np.where( indexes < 3, indexes*16+strips, strips)
      channel = data[:,1] % 8192
+     Fchannel = data[:,2]%4096
      
      #front strips convert func
      fs_convert = {}
@@ -159,7 +160,7 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
      time = np.array(time,dtype='int64')
      time_dev = np.array(np.r_[ [0],time[1:] - time[:-1] ],dtype='int64')
      len_time = len(time)
-     
+     """
      def time_correct(time_stamps,diapason):
          if len(time_stamps) > 0:
              index1 = int(time_stamps[0])
@@ -175,6 +176,8 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
                  time[index1:] += np.ones(len_time-index1)*diapason 
          return time
      
+
+    
      if time_corr:
          #reset of low counter
          diapason = 65536
@@ -186,7 +189,30 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
          time_dev = np.array(np.r_[ [0],time[1:] - time[:-1] ],dtype='int64')
          time_stamps = ( abs(time_dev)> diapason - 1000000).nonzero()[0]
          time = time_correct(time_stamps,diapason)
-     
+     """ 
+     def time_correct(time_stamps,diapason):
+         ind1,ind2,x = 0,0,0
+         for i in time_stamps:
+             ind2 = i
+             if ind1*ind2:
+                time[ind1:ind2] += diapason*x
+             ind1 = i
+             x += 1
+         time[ind2:]+=diapason*x
+         return time
+         
+     if time_corr:
+         #reset of low counter
+         diapason = 65536
+         time_stamps = ((time_dev<0)&(time_dev>-65536)).nonzero()[0]
+         time = time_correct(time_stamps,diapason)
+         
+         #reset of high counter
+         diapason = 65536**2
+         time_dev = np.array(np.r_[ [0],time[1:] - time[:-1] ],dtype='int64')
+         time_stamps = (time_dev<0).nonzero()[0] #!!! can be problem of adding too much time to the time of file
+         time = time_correct(time_stamps,diapason)
+        
      time_dev = np.array(np.r_[ [0],time[1:] - time[:-1] ],dtype='int64')
      time_sec = (time / 1000000)
      time_min = (time_sec / 60)
@@ -199,7 +225,7 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
      #TOF
      tof = data[:,6]%8192
      
-     frame = DF( {'id': indexes,'strip':strips,'channel':channel,
+     frame = DF( {'id': indexes,'strip':strips,'channel':channel,'Fchannel':Fchannel,
                   'time_hours':time_hours,'time_min':time_min,'time_sec':time_sec,'time_mks':time_mks,
                   'time_dlt':time_dev,
                   'time': time,
@@ -258,9 +284,9 @@ def read_files(filenames,**argv):
             
         
 
-def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,**argv): 
+def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,id_mark='<3',type_scale='channel',**argv): 
     """ 
-    Get amplitude spectrs from raw data.
+    Get amplitude spectrs of front detectors from raw data.
         energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
         tof - choose the type of include events by the TOF-mark
         threshold [0,1) - level of cutting of specturum (comparable with the max-height peak)
@@ -276,11 +302,13 @@ def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=
         sample = sample[ sample['tof']>0 ]
     else:
         sample = sample[ sample['tof']==0]
-    sample = sample[ sample['id']<3 ]
-    spectr = sample['channel'].groupby(sample['strip'])
+    exec( "sample = sample[ sample['id']"+id_mark+"]" )
+    spectr = sample[type_scale].groupby(sample['strip'])
+    if len(spectr) == 0:
+        raise ValueError('No such events or empty file')
     
     #choose scale
-    ysize = sample['strip'].max()
+    ysize = len(spectr)
     if energy_scale:
         xsize = 20000
     else:
@@ -329,7 +357,30 @@ def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=
         #mlab.imshow(hist, colormap='gist_earth')
     
     return hist,sum_spectr
-   
+    
+def get_side_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,**argv): 
+    """ 
+    Get amplitude spectrs of side detectors from raw data.
+        energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
+        tof - choose the type of include events by the TOF-mark
+        threshold [0,1) - level of cutting of specturum (comparable with the max-height peak)
+        visualize - show the distribution
+        **argv - arguments to pass to read_files function
+    Output: spectrs( 2Darray [0..47]x[0..8191] ),summary spectr
+    """
+    return get_front_spectrs(data,energy_scale,tof,threshold,visualize,id_mark='==3',**argv)
+
+def get_fission_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,**argv): 
+    """ 
+    Get amplitude spectrs of front detectors in high-energy scale from raw data.
+        energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
+        tof - choose the type of include events by the TOF-mark
+        threshold [0,1) - level of cutting of specturum (comparable with the max-height peak)
+        visualize - show the distribution
+        **argv - arguments to pass to read_files function
+    Output: spectrs( 2Darray [0..47]x[0..8191] ),summary spectr
+    """
+    return get_front_spectrs(data,energy_scale,tof,threshold,visualize,id_mark='<3',type_scale='Fchannel',**argv)  
 
 def pos_distr(data,tof=False,**argv):
     sample = read_files(data, **argv )

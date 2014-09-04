@@ -12,9 +12,9 @@ from spectrum_tools import *
 from read_files import get_front_spectrs
 from scipy.optimize import leastsq
 
+Alpha_energies = [6040,6143.8,6264,6899.2,7137,7922,8699,9261]
 
-
-def calibrate_area(sample,xmin,xmax,threshold=0.25,visualize=True):  
+def calibrate_area(sample,xmin,xmax,threshold=0.25,visualize=True,energies=Alpha_energies):  
     """ Return xpeaks, solution (result of linear fitting of spectrum)"""
     """MAKE AXES"""
     if visualize:
@@ -120,7 +120,7 @@ def calibrate_area(sample,xmin,xmax,threshold=0.25,visualize=True):
         return y - coef[0]*np.ones(len(x)) - coef[1]*x
    
     p0 = (0,2) #init coefficients    
-    energies = np.array([6040,6143,6264,6899,7137,7922,8699,9265])
+    #energies = np.array(energies)
     xpeaks = np.array(xpeaks)
     solution = leastsq(residuals,p0, args = (energies,xpeaks) )[0]
     
@@ -171,9 +171,9 @@ def calibrate_spectrum(filename,xmin,xmax,strips,output_file=None,args={},search
         except IndexError:
             print '%d   Error occured: possibly wrong area of calibration (xmin,xmax) \n'%(ind+1)
 
-def make_report(xpeaks,solution,ind,filename=None):
-    energies = np.array([6040,6143,6264,6899,7137,7922,8699,9265]) 
-    report = '\n%d    A = %2.3f ; B = %2.3f\n'%(ind+1,solution[0],solution[1])
+def make_report(xpeaks,solution,ind,filename=None,energies=Alpha_energies):
+    #energies = np.array([6040,6143,6264,6899,7137,7922,8699,9265]) 
+    report = '\n%d    A = %2.5f ; B = %2.1f\n'%(ind+1,solution[1],solution[0])
     report += '%5s  %5s      %4s  %5s \n'%('Eexp','Ecal','Differ','Channel')
     for i,en in enumerate(energies):
         Ecalc = solution[0]+solution[1]*xpeaks[i]
@@ -262,11 +262,12 @@ if __name__ == '__main__':
         except ValueError:
             print '%d   Error occured: the spectr %d hasn\'t been calibrated \n'%(ind+1,ind+1)
     """
-        
+      
     filename = 'tsn.456-tsn.461'
     arguments = {'strip_convert':'True','energy_scale':'False','threshold':1,'visualize':'False'}
-    search_arg = {'threshold':0.25,'visualize':'True'}
-    xmin, xmax = 2170, 3700
+    search_arg = {'threshold':0.28,'visualize':'True'}
+    xmin, xmax = 2050, 3700
     strips = np.arange(0,47)
     calibrate_spectrum(filename,xmin,xmax,strips,arguments,search_arg)
+    
     
