@@ -114,6 +114,7 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
                              f_clbr(strips,channel),channel)
          
      #back strips convert function
+     """
      def bs_convert(strip,id_):
          
          column = np.where(id_% 2 ==0,
@@ -131,23 +132,47 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
                              reverse(1,32,column), column)
          column=np.where( (column>= 65) & (column <= 128),
                              reverse(65,128,column), column)
+         column=np.where( id_ > 7, 0, column)
                 
          #column = Ser(column)
          return column
+     """       
      
+     def bs_convert(strip,id_):
+         
+         column = np.where((id_-1)% 2 ==0,
+                           strip*2 - 1 + 16*(id_-1),
+                           2*((id_-2)*8 + strip) )
+         
+         l = len(column)
+         reverse = lambda a,b,x : (a+b)*np.ones(l) -x
+         
+         column=np.where( (column>= 49) & (column <= 64),
+                             reverse(49,64,column), column)
+         column=np.where( (column>= 33) & (column <= 48),
+                             reverse(33,48,column), column)
+         column=np.where( (column>= 1) & (column <= 32),
+                             reverse(1,32,column), column)
+         column=np.where( (column>= 65) & (column <= 128),
+                             reverse(65,128,column), column)
+         column=np.where( (id_ <= 0)|(id_ > 8)|(column > 128), 0, column)
+                
+         #column = Ser(column)
+         return column  
+         
      #back detectors
      back_ind1 = (data[:,0]>>8) % 16
      back_ind2 = (data[:,0]>>12)% 16
      
-     back_strips1 = data[:,8] / 4096 
-     back_strips1 = np.where(back_strips1,back_strips1+1,0)
+     back_strips1 = data[:,8] / 4096 +1
+     #back_strips1 = np.where(back_strips1,back_strips1+1,0)
      if strip_convert:
          back_strips1 = bs_convert(back_strips1,back_ind1)
      
-     back_strips2 = data[:,10] / 4096 
+     back_strips2 = data[:,10] / 4096 +1 
      back_strips2 = np.where(back_strips2,back_strips2+1,0)
      if strip_convert:
-         back_strips2 = bs_convert(back_strips1,back_ind2)
+         back_strips2 = bs_convert(back_strips2,back_ind2)
      
      back_channel1 = data[:,7] % 8192
      back_channel2 = data[:,9] % 8192
@@ -284,7 +309,7 @@ def read_files(filenames,**argv):
             
         
 
-def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,id_mark='<3',type_scale='channel',**argv): 
+def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,id_mark='<3',type_scale='channel',type_strip='strip',**argv): 
     """ 
     Get amplitude spectrs of front detectors from raw data.
         energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
@@ -302,8 +327,9 @@ def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=
         sample = sample[ sample['tof']>0 ]
     else:
         sample = sample[ sample['tof']==0]
-    exec( "sample = sample[ sample['id']"+id_mark+"]" )
-    spectr = sample[type_scale].groupby(sample['strip'])
+    exec( "sample = sample[ sample['id']"+id_mark+"]" ) #select events with needed id marks
+    sample = sample[sample[type_strip]>0]
+    spectr = sample[type_scale].groupby(sample[type_strip])
     if len(spectr) == 0:
         raise ValueError('No such events or empty file')
     
@@ -316,16 +342,19 @@ def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=
         
     #collect histograms
     list_hist = []
+    list_columns = []
     for name,group in spectr:
         list_hist.append( np.histogram(group,bins = np.arange(xsize+2))[0][1:] )
-    hist = np.vstack( (list_hist[0],list_hist[1]))
-    for i in xrange(2,len(list_hist)):
-        hist = np.vstack( (hist,list_hist[i]))  
+        list_columns.append(name)
+    hist = DF(np.array(list_hist).T,columns = list_columns)
+    #hist = np.vstack( (list_hist[0],list_hist[1]))
+    #for i in xrange(2,len(list_hist)):
+    #    hist = np.vstack( (hist,list_hist[i]))  
     #sum
     sum_spectr = list_hist[0]
     for i in range(1,len(list_hist)):
         sum_spectr += list_hist[i]
-    
+    #hist = DF(hist)
      #visualisation
     if visualize:
         #matplotlib visualization
@@ -335,15 +364,19 @@ def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=
         #ax1 = fig.gca(projection='3d')
         #ax2 = fig.add_subplot(2,1,2,sharex = ax1)
         ax2 = fig.add_axes([0.125, 0.05, 0.64, 0.25],sharex = ax1)
-        x = np.arange(1,xsize)
-        y = np.arange(1,ysize+1)
+        #x = np.arange(1,xsize)
+       # y = np.arange(1,ysize+1)
+        
+        #hist1 = np.array(hist)
+        #hist1 = hist1[:,:-1]
+        x,y = hist.shape
+        x,y = np.arange(1,x+1),np.arange(1,y+1)
         xgrid, ygrid = np.meshgrid(x,y)
-        hist = hist[:,:-1]
-        hist[ hist > hist.max()*threshold ] = hist.max()*threshold
+        hist[ hist > max(hist.max())*threshold ] = max(hist.max())*threshold
         #ax1.plot_surface(xgrid, ygrid, hist, cmap=cm.jet, rstride = 5, cstride = 5)
-        a = ax1.pcolormesh(x,y,hist)
+        a = ax1.pcolormesh(x,y,np.array(hist).T)
         #a = ax1.imshow(hist)
-        h_min, h_max = hist.min(), hist.max()
+        h_min, h_max = min(hist.min()), max(hist.max())
         ticks = np.linspace(h_min,h_max,40)
         ax2.plot(sum_spectr,'k',linestyle='steps')
         fig.colorbar(a,ax=ax1,ticks=ticks)
@@ -358,6 +391,7 @@ def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=
     
     return hist,sum_spectr
     
+    
 def get_side_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,**argv): 
     """ 
     Get amplitude spectrs of side detectors from raw data.
@@ -370,7 +404,90 @@ def get_side_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=T
     """
     return get_front_spectrs(data,energy_scale,tof,threshold,visualize,id_mark='==3',**argv)
 
-def get_fission_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,**argv): 
+
+
+def get_back_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,type_scale='channel',**argv):
+    """ 
+    Get amplitude spectrs of back detectors from raw data.
+        energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
+        tof - choose the type of include events by the TOF-mark
+        threshold [0,1) - level of cutting of specturum (comparable with the max-height peak)
+        visualize - show the distribution
+        **argv - arguments to pass to read_files function
+    Output: spectrs( 2Darray [0..47]x[0..8191] ),summary spectr
+    """
+    #read data 
+    sample = read_files(data,**argv)
+    
+    #tof 
+    if tof:
+        sample = sample[ sample['tof']>0 ]
+    else:
+        sample = sample[ sample['tof']==0]
+    spectr1 = sample[type_scale].groupby(sample['b_strip 1']) #odd numbers of strips
+    spectr2 = sample[type_scale].groupby(sample['b_strip 2']) #even numbers of strips
+    if len(spectr1) and len(spectr2) == 0:
+        raise ValueError('No such events or empty file')
+    
+    #choose scale
+    #ysize = len(spectr1)+len(spectr2)
+    
+    if energy_scale:
+        xsize = 20000
+    else:
+        xsize = 8192
+        
+    #collect histograms
+    list_hist = []
+    names = []
+    for (name1,group1),(name2,group2) in zip(spectr2,spectr1):
+        if float(name1) % 2 == 1:
+            list_hist.append( np.histogram(group1,bins = np.arange(xsize+2))[0][1:] )
+            names.append(name1)
+        if (float(name2) % 2 == 0)&(float(name2)!=0):
+            names.append(name2)
+            list_hist.append( np.histogram(group2,bins = np.arange(xsize+2))[0][1:] )
+    hist = np.vstack( (list_hist[0],list_hist[1]))
+    for i in xrange(2,len(list_hist)):
+        hist = np.vstack( (hist,list_hist[i]))  
+    ysize = hist.shape[0]
+    #sum
+    sum_spectr = list_hist[0]
+    for i in xrange(1,len(list_hist)):
+        sum_spectr += list_hist[i]     #visualisation
+    if visualize:
+        #matplotlib visualization
+        
+        fig = plt.figure()
+        ax1 = fig.add_axes([0.125, 0.35, 0.8, 0.6])
+        #ax1 = fig.gca(projection='3d')
+        #ax2 = fig.add_subplot(2,1,2,sharex = ax1)
+        ax2 = fig.add_axes([0.125, 0.05, 0.64, 0.25],sharex = ax1)
+        x = np.arange(1,xsize)
+        y = np.arange(1,ysize+1)
+        xgrid, ygrid = np.meshgrid(x,y)
+        hist = hist[:,:-1]
+        hist[ hist > hist.max()*threshold ] = hist.max()*threshold
+        #ax1.plot_surface(xgrid, ygrid, hist, cmap=cm.jet, rstride = 5, cstride = 5)
+        print len(x),len(y),hist.shape
+        a = ax1.pcolormesh(x,y,hist)
+        #a = ax1.imshow(hist)
+        h_min, h_max = hist.min(), hist.max()
+        ticks = np.linspace(h_min,h_max,40)
+        ax2.plot(sum_spectr,'k',linestyle='steps')
+        fig.colorbar(a,ax=ax1,ticks=ticks)
+        axis = [1,x.max(),1,y.max()]
+        ax1.axis( axis )
+        ax2.axis( xmax = xsize )
+        plt.show()
+        
+        #mayavi visualization
+        #mlab.imshow(hist,colormap="gist_earth")
+        #mlab.imshow(hist, colormap='gist_earth')
+    hist_frame = DF(hist.T,columns=names)
+    return hist_frame,sum_spectr
+    
+def get_front_fission_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,**argv): 
     """ 
     Get amplitude spectrs of front detectors in high-energy scale from raw data.
         energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)

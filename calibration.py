@@ -16,7 +16,7 @@ Alpha_energies = [6040,6143.8,6264,6899.2,7137,7922,8699,9261]
 
 def calibrate_area(sample,xmin,xmax,threshold=0.25,visualize=True,energies=Alpha_energies):  
     """ Return xpeaks, solution (result of linear fitting of spectrum)"""
-    """MAKE AXES"""
+    #MAKE AXES
     if visualize:
         fig,ax = plt.subplots(3,1,sharex=True)
         ax[0].set_title('Raw spectrum')
@@ -32,7 +32,7 @@ def calibrate_area(sample,xmin,xmax,threshold=0.25,visualize=True,energies=Alpha
     hist = sample
     #xsample = np.arange(xmin,xmax)
     xsample = np.arange(xmin,xmin+len(hist))
-    xpeaks,ypeaks = search_peaks(xsample,hist,threshold=threshold)
+    xpeaks,ypeaks = search_peaks(xsample,hist,sigma=20,threshold=threshold)
     #collecting the the largest 11 peaks
     dic_peaks = dict( zip(ypeaks,xpeaks) )
     dict1 = {}
@@ -49,8 +49,8 @@ def calibrate_area(sample,xmin,xmax,threshold=0.25,visualize=True,energies=Alpha
     for k,v in sorted(dict2.iteritems() ):
         xpeaks.append(k)
         ypeaks.append(v)
-        
-    #print xpeaks, ypeaks
+    
+    print xpeaks, ypeaks
     """selecting valid peaks"""   
     def get_numb(x,list1):
         for i,j in enumerate(list1):
@@ -74,7 +74,8 @@ def calibrate_area(sample,xmin,xmax,threshold=0.25,visualize=True,energies=Alpha
         xpeaks.pop(-6)
         ypeaks.pop(-6)
     
-    #print 'Peaks founded: ',xpeaks,ypeaks   
+    #print 'Peaks founded: ',xpeaks,ypeaks  
+    
     if (xpeaks[-6]-xpeaks[-7])> 0.75*(xpeaks[-4]-xpeaks[-5]):
         #print 'YES'
         #print xpeaks
@@ -90,6 +91,7 @@ def calibrate_area(sample,xmin,xmax,threshold=0.25,visualize=True,energies=Alpha
                 middle_peak_num = get_numb(sorted(extra_ypeaks)[-3], extra_ypeaks)
                 xpeaks.insert(-6,extra_xpeaks[middle_peak_num])
                 ypeaks.insert(-6,extra_ypeaks[middle_peak_num])
+    
     #deleting all other needless peaks
     while len(xpeaks) > 8:
         xpeaks.pop(0)
@@ -141,6 +143,115 @@ def calibrate_area(sample,xmin,xmax,threshold=0.25,visualize=True,energies=Alpha
     return xpeaks,solution
     
 
+
+def calibrate_area_new(sample,xmin,xmax,threshold=0.25,sigma=25,visualize=True,energies=Alpha_energies):  
+    """ Return xpeaks, solution (result of linear fitting of spectrum)"""
+    
+    if visualize:
+        fig,ax = plt.subplots(3,1,sharex=True)
+        ax[0].set_title('Raw spectrum')
+        ax[0].plot(sample,linestyle='steps') 
+    
+    sample = sample[xmin:xmax] 
+    if (sample == 0).sum() == len(sample):
+        print 'No data in sample[xmin:xmax]'
+        return
+    sample = smooth(sample,9,'hanning')
+    sample_background = background(sample,parameters='BACK1_ORDER8,BACK1_INCLUDE_COMPTON')
+    sample -= sample_background
+    sample[ sample<0 ] = 0
+    #ax[1].plot(sample[ind],linestyle='steps',color='b') 
+    hist = smooth(sample,5,'bartlett')
+    hist = sample
+    #xsample = np.arange(xmin,xmax)
+    xsample = np.arange(xmin,xmin+len(hist))
+    xpeaks,ypeaks = search_peaks(xsample,hist,sigma=sigma,threshold=threshold)
+    #collecting the the largest 11 peaks
+    dic_peaks = dict( zip(ypeaks,xpeaks) )
+    dict1 = {}
+    if len(dic_peaks)>=14: 
+        count_peaks = 14
+    else:
+        count_peaks = len(dic_peaks)
+    for i in sorted(dic_peaks.keys())[-1:-count_peaks:-1]:
+        dict1[i] = dic_peaks[i]
+    #ypeaks,xpeaks = dict1.keys(),dict1.values()
+    #sorting by xpeaks-column
+    dict2 = {k: v for v,k in dict1.iteritems() }
+    xpeaks,ypeaks = [],[]
+    for k,v in sorted(dict2.iteritems() ):
+        xpeaks.append(k)
+        ypeaks.append(v)
+    #print 'All peaks founded: ',xpeaks
+    xpeaks,ypeaks = np.array(xpeaks),np.array(ypeaks)
+    
+    """selecting valid peaks""" 
+    spectr_peak_dists = np.array([ 0.03222596,  0.03731766,  0.1972059 ,  0.07382794,  0.24371313,  0.24122943,  0.17447998],dtype=np.float64)
+    spectr_length = (xpeaks[-1] - xpeaks[-2])/spectr_peak_dists[-1] # + (xpeaks[-2] - xpeaks[-3])/spectr_peak_dists[-2] + (xpeaks[-3] - xpeaks[-4])/spectr_peak_dists[-3] )/3
+    #print 'length',spectr_length
+    spectr_peak_dists1 = spectr_peak_dists*spectr_length
+    spectr_peak_dists1 = xpeaks[-1] - spectr_peak_dists1[::-1].cumsum()
+    #print 'spectr_length=',spectr_length
+    #print 'spectr_peak_dists',spectr_peak_dists
+    x,y = [],[]
+    x.append(xpeaks[-1])
+    y.append(ypeaks[-1])
+    """
+    for l in spectr_peak_dists:
+        x_ind = np.nonzero( abs(xpeaks-l) == abs(xpeaks - l).min() )[0]
+        x.append(xpeaks[x_ind])  
+        y.append(ypeaks[x_ind])
+    """
+    #print x[-1],spectr_peak_dists1,'\n'
+    for i in xrange(len(spectr_peak_dists1)):
+        l=spectr_peak_dists1[i]
+        #print l
+        x_ind = np.nonzero( abs(xpeaks-l) == abs(xpeaks - l).min() )[0]
+        x.append(xpeaks[x_ind])  
+        y.append(ypeaks[x_ind]) 
+        spectr_length += l - x[-1] #spectr_peak_dists1[i] - x[-1]
+        spectr_peak_dists1 = spectr_peak_dists*spectr_length
+        spectr_peak_dists1 = xpeaks[-1] - spectr_peak_dists1[::-1].cumsum()
+        #print x[-1],spectr_peak_dists1,'\n'
+        
+    x.reverse()
+    y.reverse()
+    xpeaks,ypeaks= np.array(x,dtype=np.float64),np.array(y,dtype=np.float64)  
+    #print xpeaks,ypeaks
+    if len(xpeaks) < 8:
+        print 'Not enough peaks'
+        print 'Peaks founded: ',xpeaks,ypeaks
+        plt.show()
+        raise ValueError('Not enough peaks')      
+    """Fitting by line"""
+        
+    def residuals(coef,y,x):
+        return y - coef[0]*np.ones(len(x)) - coef[1]*x
+      
+    p0 = (0,2) #init coefficients    
+    #energies = np.array(energies)
+    xpeaks = np.array(xpeaks)
+    solution = leastsq(residuals,p0, args = (energies,xpeaks) )[0]
+    """OUTPUT"""
+    #print 'Result (xpeaks,ypeaks):', xpeaks, ypeaks
+    #print 'Solution:', solution
+    if visualize:
+        #print len(xpeaks),len(energies)
+        ax[1].set_title('Processed spectrum with marked calibration peaks')
+        ax[1].set_xlim([xmin,xmax])
+        ax[1].plot(xsample,hist,linestyle='steps',color='b',linewidth=3) 
+        ax[1].plot(xpeaks,ypeaks,'ro',linewidth=4)
+        ax[2].set_xlim([xmin,xmax])
+        ax[2].set_title('Calibration function')
+        ax[2].plot(xpeaks,energies,'ro',linewidth=4,label='Data points')
+        ax[2].plot(xpeaks,solution[0]*np.ones(len(xpeaks))+solution[1]*xpeaks,linewidth=2,label='Fitting line')
+        #print solution[0]*np.ones(len(xpeaks))+solution[1]*xpeaks
+        ax[2].legend(loc='lower right')
+        plt.show()
+    return xpeaks,solution
+    
+    
+    
 def calibrate_spectrum(filename,xmin,xmax,strips,output_file=None,args={},search_agrs={}):
     """ 
     Function is for calibration of spectrs gotten from group of files
@@ -153,6 +264,11 @@ def calibrate_spectrum(filename,xmin,xmax,strips,output_file=None,args={},search
     """
     sample,sum_spectr = get_front_spectrs(filename,**args)
     
+    if output_file:
+        filename = output_file
+    else:
+        filename ='clbr_coef_Sep2014.txt'
+        
     for ind in strips:#np.arange(len(sample)):#arange(0,3):
         hist = sample[ind]   
    # Визуализация     
@@ -165,15 +281,17 @@ def calibrate_spectrum(filename,xmin,xmax,strips,output_file=None,args={},search
     # Собственно калибровка
         try:
             xpeaks,solution = calibrate_area(hist,xmin,xmax,**search_agrs)
-            print make_report(xpeaks,solution,ind,filename='clbr_coef.txt') 
+            print make_report(xpeaks,solution,ind,filename) 
         except ValueError:
             print '%d   Error occured: the spectr %d hasn\'t been calibrated \n'%(ind+1,ind+1)
         except IndexError:
             print '%d   Error occured: possibly wrong area of calibration (xmin,xmax) \n'%(ind+1)
+        except KeyError:
+            print 'No index: %d' %(ind+1)
 
 def make_report(xpeaks,solution,ind,filename=None,energies=Alpha_energies):
     #energies = np.array([6040,6143,6264,6899,7137,7922,8699,9265]) 
-    report = '\n%d    A = %2.5f ; B = %2.1f\n'%(ind+1,solution[1],solution[0])
+    report = '\n%d    A = %2.5f ; B = %2.1f\n'%(ind,solution[1],solution[0])
     report += '%5s  %5s      %4s  %5s \n'%('Eexp','Ecal','Differ','Channel')
     for i,en in enumerate(energies):
         Ecalc = solution[0]+solution[1]*xpeaks[i]
@@ -239,6 +357,7 @@ def find_calibration_area(hist):
         
         
 if __name__ == '__main__':
+    
     """ INIT
     ind = 34
     sample,sum_spectr = get_front_spectrs('tsn.456-tsn.458',strip_convert=True,energy_scale=False,threshold=1,visualize = False)
@@ -267,7 +386,9 @@ if __name__ == '__main__':
     arguments = {'strip_convert':'True','energy_scale':'False','threshold':1,'visualize':'False'}
     search_arg = {'threshold':0.28,'visualize':'True'}
     xmin, xmax = 2050, 3700
-    strips = np.arange(0,47)
-    calibrate_spectrum(filename,xmin,xmax,strips,arguments,search_arg)
+    #strips = np.arange(1,4)
+    #calibrate_spectrum(filename,xmin,xmax,strips,output_file = 'clbr_Shumeiko_2-Oct.txt',args=arguments,search_agrs=search_arg)#,output_file = 'clbr_Shumeiko_2-Oct.txt')
     
+    hist,sum1 = get_front_spectrs('tsn.456-tsn.461',strip_convert=True,threshold=0.04)
+    xpeaks,coef=calibrate_area_new(np.array(hist[3]),2150,3480,threshold=0.25,sigma=25,visualize=True,energies=Alpha_energies)
     
