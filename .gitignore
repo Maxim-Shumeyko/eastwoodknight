@@ -1,0 +1,28 @@
+#data files
+tsn.*
+*.csv
+*.bin
+yura*
+
+#text files
+*.txt
+!clbr_coef_back.txt
+!clbr_coef_front.txt
+
+#different kinds of shit
+.spyderproject
+.spyderworkspace
+*.dat
+*.c
+*.so
+
+#unnecessary files
+setup.py
+untitled3.py
+*.pyc
+
+#unnecessary folders
+build/
+american data/
+calibration/
+addition/

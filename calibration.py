@@ -167,6 +167,13 @@ def calibrate_area_new(sample,xmin,xmax,threshold=0.25,sigma=25,visualize=True,e
     xsample = np.arange(xmin,xmin+len(hist))
     xpeaks,ypeaks = search_peaks(xsample,hist,sigma=sigma,threshold=threshold)
     #collecting the the largest 11 peaks
+    
+    
+    indx = np.concatenate((np.diff(xpeaks)!=0,[True]))
+    xpeaks,ypeaks= xpeaks[indx],ypeaks[indx]
+    ypeaks = ypeaks[xpeaks.argsort()]
+    xpeaks = sorted(xpeaks)
+    """
     dic_peaks = dict( zip(ypeaks,xpeaks) )
     dict1 = {}
     if len(dic_peaks)>=14: 
@@ -175,6 +182,9 @@ def calibrate_area_new(sample,xmin,xmax,threshold=0.25,sigma=25,visualize=True,e
         count_peaks = len(dic_peaks)
     for i in sorted(dic_peaks.keys())[-1:-count_peaks:-1]:
         dict1[i] = dic_peaks[i]
+    
+    for i in sorted(dic_peaks.keys()):
+        dict1[i] = dic_peaks[i]
     #ypeaks,xpeaks = dict1.keys(),dict1.values()
     #sorting by xpeaks-column
     dict2 = {k: v for v,k in dict1.iteritems() }
@@ -182,8 +192,11 @@ def calibrate_area_new(sample,xmin,xmax,threshold=0.25,sigma=25,visualize=True,e
     for k,v in sorted(dict2.iteritems() ):
         xpeaks.append(k)
         ypeaks.append(v)
+    """
+    
     #print 'All peaks founded: ',xpeaks
     xpeaks,ypeaks = np.array(xpeaks),np.array(ypeaks)
+    print xpeaks, ypeaks
     
     """selecting valid peaks""" 
     spectr_peak_dists = np.array([ 0.03222596,  0.03731766,  0.1972059 ,  0.07382794,  0.24371313,  0.24122943,  0.17447998],dtype=np.float64)
@@ -205,13 +218,16 @@ def calibrate_area_new(sample,xmin,xmax,threshold=0.25,sigma=25,visualize=True,e
     #print x[-1],spectr_peak_dists1,'\n'
     for i in xrange(len(spectr_peak_dists1)):
         l=spectr_peak_dists1[i]
-        #print l
         x_ind = np.nonzero( abs(xpeaks-l) == abs(xpeaks - l).min() )[0]
         x.append(xpeaks[x_ind])  
         y.append(ypeaks[x_ind]) 
+        #print l,x[-1]
         spectr_length += l - x[-1] #spectr_peak_dists1[i] - x[-1]
         spectr_peak_dists1 = spectr_peak_dists*spectr_length
         spectr_peak_dists1 = xpeaks[-1] - spectr_peak_dists1[::-1].cumsum()
+        z = np.array(x,dtype=np.float64)
+        z = abs(np.diff(x))/spectr_length
+        #print spectr_peak_dists, z
         #print x[-1],spectr_peak_dists1,'\n'
         
     x.reverse()
@@ -390,5 +406,5 @@ if __name__ == '__main__':
     #calibrate_spectrum(filename,xmin,xmax,strips,output_file = 'clbr_Shumeiko_2-Oct.txt',args=arguments,search_agrs=search_arg)#,output_file = 'clbr_Shumeiko_2-Oct.txt')
     
     hist,sum1 = get_front_spectrs('tsn.456-tsn.461',strip_convert=True,threshold=0.04)
-    xpeaks,coef=calibrate_area_new(np.array(hist[3]),2150,3480,threshold=0.25,sigma=25,visualize=True,energies=Alpha_energies)
+    xpeaks,coef=calibrate_area_new(np.array(hist[3]),2150,3480,threshold=0.25,sigma=15,visualize=True,energies=Alpha_energies)
     

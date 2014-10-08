@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Nov 28 17:10:17 2013
-
+Allow to calculate calibration coefficients using tables with channel/energy
+peaks data.
 @author: eastwoodknight
 """
 import pandas as pd

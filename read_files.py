@@ -26,8 +26,13 @@ FUNCTIONS:
 3.  read_times(filename) - to read only time and strip information about event
     return (pandas) DataFrame
     
-4.  get_front_spectrs(filename) - to get alpha front spectrs
-    # data - filename or dataframe
+4.  get_front_spectrs(filenames) - to get alpha front spectrs
+    get_back_spectrs(filenames) 
+    get_side_spectrs(filenames)
+    get_front_fission_spectrs(filenames)
+    ! All this functions take data from files into one big frame that may cause problems with memory
+    ! the way to overcome the problem is to iterate throw the group of such large files
+    # also may take data from filename or dataframe
     return list of spectrs (48 spectrs, 8192 channels each)
     - show histograms of distributions
     
@@ -39,11 +44,10 @@ FUNCTIONS:
 def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
               time_corr=False,strip_convert=False):
      data = np.fromfile(filename, dtype = 'uint16', count = -1, sep = '').reshape(-1,strlength)#[:,0:9]
-     #beam marker
      beam_marker = (data[:,0]>>4)% 16
      #front detectors
-     if strip_convert:
-         print 'Flag strip_conv'
+     #if strip_convert:
+     #    print 'Flag strip_conv'
          
      indexes = data[:,0] % 16 
      strips = np.array(data[:,2] / 4096 +1,dtype='uint16')
@@ -54,129 +58,134 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
      #front strips convert func
      fs_convert = {}
      fs_convert[1]=1
-     fs_convert[2]=17
-     fs_convert[3]=33
-     fs_convert[4]=2
-     fs_convert[5]=18
-     fs_convert[6]=34
-     fs_convert[7]=3
-     fs_convert[8]=19
-     fs_convert[9]=35
-     fs_convert[10]=4
-     fs_convert[11]=20
-     fs_convert[12]=36
-     fs_convert[13]=5
-     fs_convert[14]=21
-     fs_convert[15]=37
-     fs_convert[16]=16
-     fs_convert[17]=6
-     fs_convert[18]=22
-     fs_convert[19]=38
-     fs_convert[20]=7
-     fs_convert[21]=23
-     fs_convert[22]=39
-     fs_convert[23]=8
-     fs_convert[24]=24
-     fs_convert[25]=40
-     fs_convert[26]=9
-     fs_convert[27]=25
-     fs_convert[28]=41
-     fs_convert[29]=10
-     fs_convert[30]=26
-     fs_convert[31]=42
-     fs_convert[32]=32
-     fs_convert[33]=11
-     fs_convert[34]=27
-     fs_convert[35]=43
+     fs_convert[17]=2
+     fs_convert[33]=3
+     fs_convert[2]=4
+     fs_convert[18]=5
+     fs_convert[34]=6
+     fs_convert[3]=7
+     fs_convert[19]=8
+     fs_convert[35]=9
+     fs_convert[4]=10
+     fs_convert[20]=11
      fs_convert[36]=12
-     fs_convert[37]=28
-     fs_convert[38]=44
-     fs_convert[39]=13
-     fs_convert[40]=29
-     fs_convert[41]=45
-     fs_convert[42]=14
-     fs_convert[43]=30
-     fs_convert[44]=46
-     fs_convert[45]=15
-     fs_convert[46]=31
+     fs_convert[5]=13
+     fs_convert[21]=14
+     fs_convert[37]=15
+     fs_convert[16]=16
+     fs_convert[6]=17
+     fs_convert[22]=18
+     fs_convert[38]=19
+     fs_convert[7]=20
+     fs_convert[23]=21
+     fs_convert[39]=22
+     fs_convert[8]=23
+     fs_convert[24]=24
+     fs_convert[40]=25
+     fs_convert[9]=26
+     fs_convert[25]=27
+     fs_convert[41]=28
+     fs_convert[10]=29
+     fs_convert[26]=30
+     fs_convert[42]=31
+     fs_convert[32]=32
+     fs_convert[11]=33
+     fs_convert[27]=34
+     fs_convert[43]=35
+     fs_convert[12]=36
+     fs_convert[28]=37
+     fs_convert[44]=38
+     fs_convert[13]=39
+     fs_convert[29]=40
+     fs_convert[45]=41
+     fs_convert[14]=42
+     fs_convert[30]=43
+     fs_convert[46]=44
+     fs_convert[15]=45
+     fs_convert[31]=46
      fs_convert[47]=47
      fs_convert[48]=48
      
-     if strip_convert:
-         strips = pd.Series(strips).map(fs_convert)
+     #we actually must apply strip convertion to have strip values matching calibration coefficients
+     if strip_convert or energy_scale:
+         strips = pd.Series(strips).map(fs_convert).as_matrix()
 
      #convert front strips to energy_scale
      if energy_scale:
-         lst = np.loadtxt('clbr_coef.txt',usecols=[0,1]) # [0 .. 47][..]
+         f = open('/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_front.txt','r')
+         lines = f.readlines()
+         f.close()
+         coefs =[]
+         strip_list = [] # numbers of strips corresponding with existing coefs
+         for i in lines[1::11]:
+             val = i.split()
+             coefs.append( [float(val[3]),float(val[7])] )
+             strip_list.append(float(val[0]))
+         coefs = np.array(coefs).T
          #calibration function y = a*x + b
-         f_clbr = lambda st,ch: lst[st-1,0]*ch + lst[st-1,1]
-         channel = np.where( (strips>0)&(strips<47),
-                             f_clbr(strips,channel),channel)
          
-     #back strips convert function
-     """
-     def bs_convert(strip,id_):
+         f_clbr = lambda st,ch: coefs[0][st-1]*ch + coefs[1][st-1]
+         strips = np.where( strips<=47,strips,np.zeros(len(strips),dtype=np.int16))
+         channel = np.where( strips,f_clbr(strips,channel),np.zeros(len(strips)) )
          
-         column = np.where(id_% 2 ==0,
-                           strip*2 - 1 + 16*id_,
-                           2*((id_-1)*8 + strip) )
+     #back strips convert function     
+     def bs_convert1(strip,id_):
+         a = pd.read_table('/home/eastwood/codes/Python_Idle/data_processing/StripOrder.txt',sep='\s+',skiprows=53,header=None,nrows=64)
+         index = a[0]
+         a = pd.Series(a[1])
+         a.index = index
+         f = lambda x: a[x]
+         strip = np.where(id_>0,strip+(id_/2)*16,np.zeros(len(id_)) )
+         strip = np.array(f( strip ),dtype=np.int16)
+         return strip  
+
+     def bs_convert2(strip,id_):
+         a = pd.read_table('/home/eastwood/codes/Python_Idle/data_processing/StripOrder.txt',sep='\s+',skiprows=120,header=None,nrows=64)
+         index = a[0]
+         #print ( id_ == 4).sum()
+         a = pd.Series(a[1])
+         a.index = index
+         f = lambda x: a[x]
+         strip = np.where(id_>0,strip+(id_/2-1)*16,np.zeros(len(id_)) )
+         strip = np.array(f( strip ),dtype=np.int16)
+         return strip  
          
-         l = len(column)
-         reverse = lambda a,b,x : (a+b)*np.ones(l) -x
-         
-         column=np.where( (column>= 49) & (column <= 64),
-                             reverse(49,64,column), column)
-         column=np.where( (column>= 33) & (column <= 48),
-                             reverse(33,48,column), column)
-         column=np.where( (column>= 1) & (column <= 32),
-                             reverse(1,32,column), column)
-         column=np.where( (column>= 65) & (column <= 128),
-                             reverse(65,128,column), column)
-         column=np.where( id_ > 7, 0, column)
-                
-         #column = Ser(column)
-         return column
-     """       
-     
-     def bs_convert(strip,id_):
-         
-         column = np.where((id_-1)% 2 ==0,
-                           strip*2 - 1 + 16*(id_-1),
-                           2*((id_-2)*8 + strip) )
-         
-         l = len(column)
-         reverse = lambda a,b,x : (a+b)*np.ones(l) -x
-         
-         column=np.where( (column>= 49) & (column <= 64),
-                             reverse(49,64,column), column)
-         column=np.where( (column>= 33) & (column <= 48),
-                             reverse(33,48,column), column)
-         column=np.where( (column>= 1) & (column <= 32),
-                             reverse(1,32,column), column)
-         column=np.where( (column>= 65) & (column <= 128),
-                             reverse(65,128,column), column)
-         column=np.where( (id_ <= 0)|(id_ > 8)|(column > 128), 0, column)
-                
-         #column = Ser(column)
-         return column  
-         
-     #back detectors
-     back_ind1 = (data[:,0]>>8) % 16
+     #reading id_s, amplitudes and strip numbers for back detectors
+     back_ind1 = (data[:,0]>>8) % 16 
      back_ind2 = (data[:,0]>>12)% 16
      
      back_strips1 = data[:,8] / 4096 +1
-     #back_strips1 = np.where(back_strips1,back_strips1+1,0)
-     if strip_convert:
-         back_strips1 = bs_convert(back_strips1,back_ind1)
+     if strip_convert or energy_scale:
+         back_strips1 = bs_convert1(back_strips1,back_ind1)
      
      back_strips2 = data[:,10] / 4096 +1 
-     back_strips2 = np.where(back_strips2,back_strips2+1,0)
-     if strip_convert:
-         back_strips2 = bs_convert(back_strips2,back_ind2)
+     back_strips2 = np.where(back_strips2,back_strips2,0)
+     if strip_convert or energy_scale:
+         back_strips2 = bs_convert2(back_strips2,back_ind2)
      
      back_channel1 = data[:,7] % 8192
      back_channel2 = data[:,9] % 8192
      
+     #convert amplitudes to energies
+     if energy_scale:
+         f = open('/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_back.txt','r')
+         lines = f.readlines()
+         f.close()
+         coefs = []
+         strip_list = [] # numbers of strips corresponding with existing coefs
+         for i in lines[1::11]:
+             val = i.split()
+             coefs.append( [float(val[3]),float(val[7])] )
+             strip_list.append(float(val[0]))
+         coefs = np.array(coefs).T
+         #calibration function y = a*x + b
+         f_clbr = lambda st,ch: coefs[0][st-1]*ch + coefs[1][st-1]
+         back_strips1 = np.where( back_strips1<=47,back_strips1,np.zeros(len(back_strips1),dtype=np.int16))
+         back_strips2 = np.where( back_strips2<=47,back_strips2,np.zeros(len(back_strips2),dtype=np.int16))
+         #print back_strips1.dtype, back_strips2.dtype
+         back_channel1 = np.where( back_channel1,f_clbr(back_strips1,back_channel1),np.zeros(len(back_channel1),dtype=np.int16) )
+         back_channel2 = np.where( back_channel2,f_clbr(back_strips2,back_channel2),np.zeros(len(back_channel1),dtype=np.int16) )
+                                   
      #time distr
      time = data[:,3]*65536 + data[:,4]
      
@@ -185,36 +194,7 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
      time = np.array(time,dtype='int64')
      time_dev = np.array(np.r_[ [0],time[1:] - time[:-1] ],dtype='int64')
      len_time = len(time)
-     """
-     def time_correct(time_stamps,diapason):
-         if len(time_stamps) > 0:
-             index1 = int(time_stamps[0])
-             if len(time_stamps) ==1:
-                 index2 = len_time
-                 time[index1:] += np.ones(len_time-index1)*diapason
-             else:
-                 for i in range(1,len(time_stamps)):
-                     index2 = time_stamps[i]
-                     time[index1:] += np.ones(len_time-index1)*diapason
-                     index1 = index2
-                 index2 = len(time)
-                 time[index1:] += np.ones(len_time-index1)*diapason 
-         return time
      
-
-    
-     if time_corr:
-         #reset of low counter
-         diapason = 65536
-         time_stamps = ( time_dev<0 ).nonzero()[0]
-         time = time_correct(time_stamps,diapason)
-               
-         #reset of high counter
-         diapason = 65536*65536
-         time_dev = np.array(np.r_[ [0],time[1:] - time[:-1] ],dtype='int64')
-         time_stamps = ( abs(time_dev)> diapason - 1000000).nonzero()[0]
-         time = time_correct(time_stamps,diapason)
-     """ 
      def time_correct(time_stamps,diapason):
          ind1,ind2,x = 0,0,0
          for i in time_stamps:
@@ -225,7 +205,8 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
              x += 1
          time[ind2:]+=diapason*x
          return time
-         
+     
+     #time corrections is needed because of electric time counters sometimes reset
      if time_corr:
          #reset of low counter
          diapason = 65536
@@ -263,6 +244,7 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
      
      if write_file:           
          frame.to_csv(filename.split('.')[1]+'.csv')
+         
      return frame 
      
      
@@ -271,7 +253,7 @@ def read_files(filenames,**argv):
     
     if type(filenames) == type(pd.DataFrame()):
         return filenames
-        
+    
     #a bit of carrying 
     #read = lambda x,y=strlength: read_file(x,y)
     #primitive parser
@@ -307,10 +289,43 @@ def read_files(filenames,**argv):
         
     return frame
             
+            
         
+def visualize_spectrum(hist,sum_spectr,window=None):
+    #matplotlib visualization
+    
+    fig = plt.figure()
+    ax1 = fig.add_axes([0.125, 0.35, 0.8, 0.6])
+    ax2 = fig.add_axes([0.125, 0.05, 0.64, 0.25],sharex = ax1)
+    x,y = hist.shape
+    y = np.arange(1,y+1)
+    #in case of energy scale i use sum by window to compress spectr and make peaks more distinct
+    x = np.arange(1,x+1)*window if window else np.arange(1,x+1)
+    
+    xgrid, ygrid = np.meshgrid(x,y)
+    a = ax1.pcolormesh(xgrid,ygrid,hist.as_matrix().T)
+    h_min, h_max = min(hist.min()), max(hist.max())
+    ticks = np.linspace(h_min,h_max,40)
+    ax2.plot(x,sum_spectr,'k',linestyle='steps')
+    fig.colorbar(a,ax=ax1,ticks=ticks)
+    axis = [1,x.max(),1,y.max()]
+    ax1.axis( axis )
+    ax2.axis( xmax = x.max() )
+    plt.show()
 
-def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,id_mark='<3',type_scale='channel',type_strip='strip',**argv): 
-    """ 
+
+
+
+def rolling_window(a, window):
+    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
+    strides = a.strides + (a.strides[-1],)
+    return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
+    
+def window_sum(a,n=4):
+    return np.sum(rolling_window(np.array(a),n),axis=1)[::n]    
+
+def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,id_mark='<3',type_scale='channel',type_strip='strip',**argv): 
+    """ energy_scale=True,
     Get amplitude spectrs of front detectors from raw data.
         energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
         tof - choose the type of include events by the TOF-mark
@@ -330,66 +345,45 @@ def get_front_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=
     exec( "sample = sample[ sample['id']"+id_mark+"]" ) #select events with needed id marks
     sample = sample[sample[type_strip]>0]
     spectr = sample[type_scale].groupby(sample[type_strip])
+    del sample
     if len(spectr) == 0:
         raise ValueError('No such events or empty file')
     
     #choose scale
     ysize = len(spectr)
-    if energy_scale:
-        xsize = 20000
-    else:
-        xsize = 8192
-        
+    xsize=np.arange(8192)
+    energy_scale = False
+    if 'energy_scale' in argv:
+        if argv['energy_scale']:
+            energy_scale = True
+            window = 8
+            xsize = np.arange(20000)[::window]
+            
     #collect histograms
     list_hist = []
     list_columns = []
     for name,group in spectr:
-        list_hist.append( np.histogram(group,bins = np.arange(xsize+2))[0][1:] )
+        list_hist.append( np.histogram(group,bins = xsize)[0][1:] )
         list_columns.append(name)
     hist = DF(np.array(list_hist).T,columns = list_columns)
-    #hist = np.vstack( (list_hist[0],list_hist[1]))
-    #for i in xrange(2,len(list_hist)):
-    #    hist = np.vstack( (hist,list_hist[i]))  
+    
     #sum
     sum_spectr = list_hist[0]
     for i in range(1,len(list_hist)):
         sum_spectr += list_hist[i]
-    #hist = DF(hist)
+
+    hist = hist.sort_index(axis=1)
+    hist[ hist > max(hist.max())*threshold ] = max(hist.max())*threshold
+    
      #visualisation
     if visualize:
-        #matplotlib visualization
-        
-        fig = plt.figure()
-        ax1 = fig.add_axes([0.125, 0.35, 0.8, 0.6])
-        #ax1 = fig.gca(projection='3d')
-        #ax2 = fig.add_subplot(2,1,2,sharex = ax1)
-        ax2 = fig.add_axes([0.125, 0.05, 0.64, 0.25],sharex = ax1)
-        #x = np.arange(1,xsize)
-       # y = np.arange(1,ysize+1)
-        
-        #hist1 = np.array(hist)
-        #hist1 = hist1[:,:-1]
-        x,y = hist.shape
-        x,y = np.arange(1,x+1),np.arange(1,y+1)
-        xgrid, ygrid = np.meshgrid(x,y)
-        hist[ hist > max(hist.max())*threshold ] = max(hist.max())*threshold
-        #ax1.plot_surface(xgrid, ygrid, hist, cmap=cm.jet, rstride = 5, cstride = 5)
-        a = ax1.pcolormesh(x,y,np.array(hist).T)
-        #a = ax1.imshow(hist)
-        h_min, h_max = min(hist.min()), max(hist.max())
-        ticks = np.linspace(h_min,h_max,40)
-        ax2.plot(sum_spectr,'k',linestyle='steps')
-        fig.colorbar(a,ax=ax1,ticks=ticks)
-        axis = [1,x.max(),1,y.max()]
-        ax1.axis( axis )
-        ax2.axis( xmax = xsize )
-        plt.show()
-        
-        #mayavi visualization
-        #mlab.imshow(hist,colormap="gist_earth")
-        #mlab.imshow(hist, colormap='gist_earth')
-    
+        if energy_scale: 
+            visualize_spectrum(hist,sum_spectr,window=window)
+        else:
+            visualize_spectrum(hist,sum_spectr)
+            
     return hist,sum_spectr
+    
     
     
 def get_side_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,**argv): 
@@ -406,8 +400,8 @@ def get_side_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=T
 
 
 
-def get_back_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,type_scale='channel',**argv):
-    """ 
+def get_back_spectrs(data,tof=False,threshold=0.04,visualize=True,**argv):
+    """ energy_scale=True,
     Get amplitude spectrs of back detectors from raw data.
         energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
         tof - choose the type of include events by the TOF-mark
@@ -424,68 +418,58 @@ def get_back_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=T
         sample = sample[ sample['tof']>0 ]
     else:
         sample = sample[ sample['tof']==0]
-    spectr1 = sample[type_scale].groupby(sample['b_strip 1']) #odd numbers of strips
-    spectr2 = sample[type_scale].groupby(sample['b_strip 2']) #even numbers of strips
+    spectr1 = sample['b_channel1'].groupby(sample['b_strip 1']) #odd numbers of strips
+    spectr2 = sample['b_channel2'].groupby(sample['b_strip 2']) #even numbers of strips
+    del sample
     if len(spectr1) and len(spectr2) == 0:
         raise ValueError('No such events or empty file')
     
     #choose scale
-    #ysize = len(spectr1)+len(spectr2)
-    
-    if energy_scale:
-        xsize = 20000
-    else:
-        xsize = 8192
-        
+    xsize = np.arange(8192)
+    energy_scale = False
+    if 'energy_scale' in argv:
+        if argv['energy_scale']:
+            energy_scale = True
+            xsize = np.arange(20000)
+            window = 8
+            xsize = xsize[::window ]
     #collect histograms
     list_hist = []
     names = []
-    for (name1,group1),(name2,group2) in zip(spectr2,spectr1):
+    for (name1,group1) in spectr2:
+        #collecting histograms from odd strips
         if float(name1) % 2 == 1:
-            list_hist.append( np.histogram(group1,bins = np.arange(xsize+2))[0][1:] )
             names.append(name1)
+            #if 'energy_scale' in argv: #sum by window to compress spectrums
+            #    if argv['energy_scale']:
+            #        group1 = window_sum(group1,window )
+            list_hist.append( np.histogram(group1,bins = xsize)[0][1:] )
+            
+    for (name2,group2) in spectr1:
         if (float(name2) % 2 == 0)&(float(name2)!=0):
             names.append(name2)
-            list_hist.append( np.histogram(group2,bins = np.arange(xsize+2))[0][1:] )
+            #if 'energy_scale' in argv:
+            #    if argv['energy_scale']:
+            #        group2 = window_sum(group2,window )
+            list_hist.append( np.histogram(group2,bins = xsize)[0][1:] )
     hist = np.vstack( (list_hist[0],list_hist[1]))
     for i in xrange(2,len(list_hist)):
         hist = np.vstack( (hist,list_hist[i]))  
     ysize = hist.shape[0]
-    #sum
+    #calculate the sum of spectrums
     sum_spectr = list_hist[0]
     for i in xrange(1,len(list_hist)):
-        sum_spectr += list_hist[i]     #visualisation
+        sum_spectr += list_hist[i]     
+    hist = DF(hist.T,columns=names)
+    hist = hist.sort_index(axis=1)
+    hist[ hist > max(hist.max())*threshold ] = max(hist.max())*threshold
+    #visualisation
     if visualize:
-        #matplotlib visualization
-        
-        fig = plt.figure()
-        ax1 = fig.add_axes([0.125, 0.35, 0.8, 0.6])
-        #ax1 = fig.gca(projection='3d')
-        #ax2 = fig.add_subplot(2,1,2,sharex = ax1)
-        ax2 = fig.add_axes([0.125, 0.05, 0.64, 0.25],sharex = ax1)
-        x = np.arange(1,xsize)
-        y = np.arange(1,ysize+1)
-        xgrid, ygrid = np.meshgrid(x,y)
-        hist = hist[:,:-1]
-        hist[ hist > hist.max()*threshold ] = hist.max()*threshold
-        #ax1.plot_surface(xgrid, ygrid, hist, cmap=cm.jet, rstride = 5, cstride = 5)
-        print len(x),len(y),hist.shape
-        a = ax1.pcolormesh(x,y,hist)
-        #a = ax1.imshow(hist)
-        h_min, h_max = hist.min(), hist.max()
-        ticks = np.linspace(h_min,h_max,40)
-        ax2.plot(sum_spectr,'k',linestyle='steps')
-        fig.colorbar(a,ax=ax1,ticks=ticks)
-        axis = [1,x.max(),1,y.max()]
-        ax1.axis( axis )
-        ax2.axis( xmax = xsize )
-        plt.show()
-        
-        #mayavi visualization
-        #mlab.imshow(hist,colormap="gist_earth")
-        #mlab.imshow(hist, colormap='gist_earth')
-    hist_frame = DF(hist.T,columns=names)
-    return hist_frame,sum_spectr
+        if energy_scale:
+            visualize_spectrum(hist,sum_spectr,window=window)
+        else:
+            visualize_spectrum(hist,sum_spectr)
+    return hist,sum_spectr
     
 def get_front_fission_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,**argv): 
     """ 
@@ -628,12 +612,8 @@ def time_sinc_distr(filename):
     plt.hist(sample['sinctime_dev'],np.arange(maxvalue),alpha = 0.4, facecolor = 'g')
     #plt.plot(hist1[1][1:],hist1[0],linestyle = 'steps',alpha = 0.7)
     plt.show()
-"""    
-def show_front(filename,strip=1):
-    frame = read_files(filename)
-    spectr
-    
-"""
+
+
 def diff_time_distr(filename,xmax=100):
     frame = read_file(filename)['time']
     frame = frame.diff()
@@ -650,11 +630,14 @@ if __name__ == '__main__':
     print 'is run'
     #print read_times('tsn.562')
     #time_sinc_distr('tsn.605')
-    frame = read_file('tsn.456')
+    #frame = read_file('tsn.35',strip_convert=True)
     #frame = read_files('tsn.611-tsn.615')
     #frame1 = read_files('tsn.459',strlength=14,energy_scale=True)
     #pos_distr('tsn.459-tsn.461',tof = False, strip_convert=True)
-    hist,sum_spectr = get_front_spectrs(frame)
+    #frame = read_file('tsn.458',strip_convert=True,energy_scale=True)
+
+    hist,sum_spectr = get_front_spectrs('tsn.31',strip_convert=True,energy_scale=True)
+    hist,sum_spectr = get_back_spectrs('tsn.31',strip_convert=True,energy_scale=True)
     # tof_distr('tsn.371')
     #frame2 = read_files('tsn.612,tsn.613')
     #time_sinc_distr('tsn.606')
