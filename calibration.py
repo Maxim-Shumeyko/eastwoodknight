@@ -13,193 +13,45 @@ from read_files import get_front_spectrs
 from scipy.optimize import leastsq
 
 Alpha_energies = [6040,6143.8,6264,6899.2,7137,7922,8699,9261]
+ 
 
-def calibrate_area(sample,xmin,xmax,threshold=0.25,visualize=True,energies=Alpha_energies):  
-    """ Return xpeaks, solution (result of linear fitting of spectrum)"""
-    #MAKE AXES
-    if visualize:
-        fig,ax = plt.subplots(3,1,sharex=True)
-        ax[0].set_title('Raw spectrum')
-        ax[0].plot(sample,linestyle='steps') 
-    
-    sample = sample[xmin:xmax]    
-    sample = smooth(sample,9,'hanning')
-    sample_background = background(sample,parameters='BACK1_ORDER8,BACK1_INCLUDE_COMPTON')
-    sample -= sample_background
-    sample[ sample<0 ] = 0
-    #ax[1].plot(sample[ind],linestyle='steps',color='b') 
-    hist = smooth(sample,5,'bartlett')
-    hist = sample
-    #xsample = np.arange(xmin,xmax)
-    xsample = np.arange(xmin,xmin+len(hist))
-    xpeaks,ypeaks = search_peaks(xsample,hist,sigma=20,threshold=threshold)
-    #collecting the the largest 11 peaks
-    dic_peaks = dict( zip(ypeaks,xpeaks) )
-    dict1 = {}
-    if len(dic_peaks)>=14: 
-        count_peaks = 14
-    else:
-        count_peaks = len(dic_peaks)
-    for i in sorted(dic_peaks.keys())[-1:-count_peaks:-1]:
-        dict1[i] = dic_peaks[i]
-    #ypeaks,xpeaks = dict1.keys(),dict1.values()
-    #sorting by xpeaks-column
-    dict2 = {k: v for v,k in dict1.iteritems() }
-    xpeaks,ypeaks = [],[]
-    for k,v in sorted(dict2.iteritems() ):
-        xpeaks.append(k)
-        ypeaks.append(v)
-    
-    print xpeaks, ypeaks
-    """selecting valid peaks"""   
-    def get_numb(x,list1):
-        for i,j in enumerate(list1):
-            if j == x:
-                return i
-    
-    if len(xpeaks) < 8:
-        print 'Not enough peaks'
-        print 'Peaks founded: ',xpeaks,ypeaks
-        plt.show()
-        raise ValueError('Not enough peaks')
-        
-    # deleting of 4 needless peak from right
-    if (len(xpeaks) >= 5) and \
-        (xpeaks[-4] > xpeaks[-3] - 0.75*(xpeaks[-2]-xpeaks[-3]) ):
-        xpeaks.pop(-4)
-        ypeaks.pop(-4)
-    # missing of 7th valid from right
-     # deleting 2 needless peaks after 3nd
-    while xpeaks[-6] > xpeaks[-5] - 1.3*(xpeaks[-4]-xpeaks[-5]):
-        xpeaks.pop(-6)
-        ypeaks.pop(-6)
-    
-    #print 'Peaks founded: ',xpeaks,ypeaks  
-    
-    if (xpeaks[-6]-xpeaks[-7])> 0.75*(xpeaks[-4]-xpeaks[-5]):
-        #print 'YES'
-        #print xpeaks
-        xstart,xstop = get_numb(xpeaks[-7],xsample),get_numb(xpeaks[-6],xsample)
-        #print xsample[xstart],xsample[xstop]
-        #print xstart, xstop
-        if xstop - xstart != 0:
-            extra_xpeaks,extra_ypeaks = search_peaks(xsample[xstart:xstop],\
-            hist[xstart:xstop],threshold = 0.3)
-            #print extra_xpeaks
-            #print '!!',extra_xpeaks,extra_ypeaks
-            if len(extra_xpeaks)>=3:
-                middle_peak_num = get_numb(sorted(extra_ypeaks)[-3], extra_ypeaks)
-                xpeaks.insert(-6,extra_xpeaks[middle_peak_num])
-                ypeaks.insert(-6,extra_ypeaks[middle_peak_num])
-    
-    #deleting all other needless peaks
-    while len(xpeaks) > 8:
-        xpeaks.pop(0)
-        ypeaks.pop(0)
-    """            
-    if (xpeaks[2]-xpeaks[1])> (xpeaks[3]-xpeaks[2]):
-        print 'YES'
-        xstart,xstop = get_numb(xpeaks[0],xsample),get_numb(xpeaks[1],xsample)
-        print xstart, xstop
-        if xstop - xstart != 0:
-            extra_xpeaks,extra_ypeaks = search_peaks(xsample[xstart:xstop],\
-                    hist[xstart:xstop],threshold = 0.12)
-            print '!!',extra_xpeaks,extra_ypeaks
-            if len(extra_xpeaks)>=3:
-                middle_peak_num = get_numb(sorted(extra_ypeaks)[-3], extra_ypeaks)
-                xpeaks.insert(1,extra_xpeaks[middle_peak_num])
-                ypeaks.insert(1,extra_ypeaks[middle_peak_num])
-    # deleting 2 needless peaks after 3nd
-    xpeaks.pop(3)
-    ypeaks.pop(3)
-    xpeaks.pop(3)
-    ypeaks.pop(3)
-    """
-           
-    """Fitting by line"""
-        
-    def residuals(coef,y,x):
-        return y - coef[0]*np.ones(len(x)) - coef[1]*x
-   
-    p0 = (0,2) #init coefficients    
-    #energies = np.array(energies)
-    xpeaks = np.array(xpeaks)
-    solution = leastsq(residuals,p0, args = (energies,xpeaks) )[0]
-    
-    """OUTPUT"""
-    #print 'Result (xpeaks,ypeaks):', xpeaks, ypeaks
-    #print 'Solution:', solution
-    if visualize:
-        #print len(xpeaks),len(energies)
-        ax[1].set_title('Processed spectrum with marked calibration peaks')
-        ax[1].plot(xsample,hist,linestyle='steps',color='b',linewidth=3) 
-        ax[1].plot(xpeaks,ypeaks,'ro',linewidth=4)
-        ax[2].set_title('Calibration function')
-        ax[2].plot(xpeaks,energies,'ro',linewidth=4,label='Data points')
-        ax[2].plot(xpeaks,solution[0]*np.ones(len(xpeaks))+solution[1]*xpeaks,linewidth=2,label='Fitting line')
-        #print solution[0]*np.ones(len(xpeaks))+solution[1]*xpeaks
-        ax[2].legend(loc='lower right')
-        plt.show()
-    return xpeaks,solution
-    
-
-
-def calibrate_area_new(sample,xmin,xmax,threshold=0.25,sigma=25,visualize=True,energies=Alpha_energies):  
+def calibrate_area(sample,xmin,xmax,threshold=0.25,sigma=3,visualize=True,energies=Alpha_energies):  
     """ Return xpeaks, solution (result of linear fitting of spectrum)"""
     
     if visualize:
         fig,ax = plt.subplots(3,1,sharex=True)
         ax[0].set_title('Raw spectrum')
         ax[0].plot(sample,linestyle='steps') 
-    
+        
     sample = sample[xmin:xmax] 
     if (sample == 0).sum() == len(sample):
         print 'No data in sample[xmin:xmax]'
         return
+   
     sample = smooth(sample,9,'hanning')
     sample_background = background(sample,parameters='BACK1_ORDER8,BACK1_INCLUDE_COMPTON')
     sample -= sample_background
-    sample[ sample<0 ] = 0
-    #ax[1].plot(sample[ind],linestyle='steps',color='b') 
+    sample[ sample<0 ] = 0 
     hist = smooth(sample,5,'bartlett')
     hist = sample
-    #xsample = np.arange(xmin,xmax)
-    xsample = np.arange(xmin,xmin+len(hist))
-    xpeaks,ypeaks = search_peaks(xsample,hist,sigma=sigma,threshold=threshold)
-    #collecting the the largest 11 peaks
+    xsample = range(xmin,xmin+len(hist))
     
+    #finding peaks 
+    xpeaks,ypeaks = search_peaks(xsample,hist,sigma=sigma,threshold=threshold) 
+    indx = np.concatenate((np.abs(np.diff(xpeaks))>4 ,[True])) # delete too close peaks
     
-    indx = np.concatenate((np.diff(xpeaks)!=0,[True]))
+    print 'Indx: ',indx
+    
     xpeaks,ypeaks= xpeaks[indx],ypeaks[indx]
     ypeaks = ypeaks[xpeaks.argsort()]
     xpeaks = sorted(xpeaks)
-    """
-    dic_peaks = dict( zip(ypeaks,xpeaks) )
-    dict1 = {}
-    if len(dic_peaks)>=14: 
-        count_peaks = 14
-    else:
-        count_peaks = len(dic_peaks)
-    for i in sorted(dic_peaks.keys())[-1:-count_peaks:-1]:
-        dict1[i] = dic_peaks[i]
-    
-    for i in sorted(dic_peaks.keys()):
-        dict1[i] = dic_peaks[i]
-    #ypeaks,xpeaks = dict1.keys(),dict1.values()
-    #sorting by xpeaks-column
-    dict2 = {k: v for v,k in dict1.iteritems() }
-    xpeaks,ypeaks = [],[]
-    for k,v in sorted(dict2.iteritems() ):
-        xpeaks.append(k)
-        ypeaks.append(v)
-    """
+    print xpeaks,ypeaks
     
     #print 'All peaks founded: ',xpeaks
     xpeaks,ypeaks = np.array(xpeaks),np.array(ypeaks)
-    print xpeaks, ypeaks
     
     """selecting valid peaks""" 
-    spectr_peak_dists = np.array([ 0.03222596,  0.03731766,  0.1972059 ,  0.07382794,  0.24371313,  0.24122943,  0.17447998],dtype=np.float64)
+    spectr_peak_dists = np.diff(np.array(energies,dtype = np.float64) ) / (energies[-1]-energies[0])
     spectr_length = (xpeaks[-1] - xpeaks[-2])/spectr_peak_dists[-1] # + (xpeaks[-2] - xpeaks[-3])/spectr_peak_dists[-2] + (xpeaks[-3] - xpeaks[-4])/spectr_peak_dists[-3] )/3
     #print 'length',spectr_length
     spectr_peak_dists1 = spectr_peak_dists*spectr_length
@@ -234,19 +86,32 @@ def calibrate_area_new(sample,xmin,xmax,threshold=0.25,sigma=25,visualize=True,e
     y.reverse()
     xpeaks,ypeaks= np.array(x,dtype=np.float64),np.array(y,dtype=np.float64)  
     #print xpeaks,ypeaks
-    if len(xpeaks) < 8:
+    
+    if len(xpeaks) < len(energies):
         print 'Not enough peaks'
         print 'Peaks founded: ',xpeaks,ypeaks
         plt.show()
-        raise ValueError('Not enough peaks')      
+        raise ValueError('Not enough peaks') 
+    
     """Fitting by line"""
-        
+     
     def residuals(coef,y,x):
         return y - coef[0]*np.ones(len(x)) - coef[1]*x
-      
+
+    #correct xpeaks by calculating a weighted average of x using +-3*sigma window   
+    
+    xpeaks1 = []
+    for x in xpeaks:
+        ind = xsample.index(x)
+        hist_sum = hist[ind-3*sigma:ind+3*sigma+1].sum()
+        #print '\n',hist[ind-2*sigma:ind+2*sigma+1],xsample[ind-2*sigma:ind+2*sigma+1],hist[ind-2*sigma:ind+2*sigma+1]*xsample[ind-2*sigma:ind+2*sigma+1]
+        xpeaks1.append( (hist[ind-3*sigma:ind+3*sigma+1]*xsample[ind-3*sigma:ind+3*sigma+1]).sum()/hist_sum )
+    
+    print xpeaks, xpeaks1
     p0 = (0,2) #init coefficients    
     #energies = np.array(energies)
-    xpeaks = np.array(xpeaks)
+    xpeaks = np.array(xpeaks1)
+    xpeaks,ypeaks= np.array(xpeaks,dtype=np.float64),np.array(ypeaks,dtype=np.float64)
     solution = leastsq(residuals,p0, args = (energies,xpeaks) )[0]
     """OUTPUT"""
     #print 'Result (xpeaks,ypeaks):', xpeaks, ypeaks
@@ -406,5 +271,5 @@ if __name__ == '__main__':
     #calibrate_spectrum(filename,xmin,xmax,strips,output_file = 'clbr_Shumeiko_2-Oct.txt',args=arguments,search_agrs=search_arg)#,output_file = 'clbr_Shumeiko_2-Oct.txt')
     
     hist,sum1 = get_front_spectrs('tsn.456-tsn.461',strip_convert=True,threshold=0.04)
-    xpeaks,coef=calibrate_area_new(np.array(hist[3]),2150,3480,threshold=0.25,sigma=15,visualize=True,energies=Alpha_energies)
+    xpeaks,coef=calibrate_area(np.array(hist[3]),2150,3480,threshold=0.25,sigma=5,visualize=True,energies=Alpha_energies)
     

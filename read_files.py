@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from pandas import Series as Ser, DataFrame as DF
 from mayavi import mlab
 from matplotlib import cm
+import read_american_format_cy as read_am
 #import Visualisator
 
 
@@ -47,10 +48,8 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
 
      data = np.fromfile(filename, dtype = 'uint16', count = -1, sep = '').reshape(-1,strlength)#[:,0:9]
      beam_marker = (data[:,0]>>4)% 16
+     
      #front detectors
-     #if strip_convert:
-     #    print 'Flag strip_conv'
-         
      indexes = data[:,0] % 16 
      strips = np.array(data[:,2] / 4096 +1,dtype='uint16')
      strips = np.where( indexes < 3, indexes*16+strips, strips)
@@ -110,7 +109,7 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
      
      #we actually must apply strip convertion to have strip values matching calibration coefficients
      if strip_convert or energy_scale:
-         strips = pd.Series(strips).map(fs_convert).as_matrix()
+         strips = np.where(indexes<3,pd.Series(strips).map(fs_convert),strips)
 
      #convert front strips to energy_scale
      if energy_scale:
@@ -300,7 +299,7 @@ def visualize_spectrum(hist,sum_spectr,window=None):
     ax1 = fig.add_axes([0.125, 0.35, 0.8, 0.6])
     ax2 = fig.add_axes([0.125, 0.05, 0.64, 0.25],sharex = ax1)
     x,y = hist.shape
-    y = np.arange(1,y+1)
+    y = hist.columns#np.arange(1,y+1)
     #in case of energy scale i use sum by window to compress spectr and make peaks more distinct
     x = np.arange(1,x+1)*window if window else np.arange(1,x+1)
     
@@ -310,8 +309,8 @@ def visualize_spectrum(hist,sum_spectr,window=None):
     ticks = np.linspace(h_min,h_max,40)
     ax2.plot(x,sum_spectr,'k',linestyle='steps')
     fig.colorbar(a,ax=ax1,ticks=ticks)
-    axis = [1,x.max(),1,y.max()]
-    ax1.axis( axis )
+    #axis = [x.min(),x.max(),y.min(),y.max()]
+    #ax1.axis( axis )
     ax2.axis( xmax = x.max() )
     plt.show()
 
@@ -334,6 +333,7 @@ def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,id_mark='<3',
         threshold [0,1) - level of cutting of specturum (comparable with the max-height peak)
         visualize - show the distribution
         **argv - arguments to pass to read_files function
+    !note: there're 48 front detectors with strip numbers 1-48; 
     Output: spectrs( 2Darray [0..47]x[0..8191] ),summary spectr
     """
     #read data 
@@ -385,6 +385,20 @@ def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,id_mark='<3',
             visualize_spectrum(hist,sum_spectr)
             
     return hist,sum_spectr
+        
+        
+#apply some get_... function to get distributions from american format binaries
+def get_am_distribution( data, f = lambda x: get_front_spectrs(x,tof=False,threshold=0.1,visualize=False),visualize=True ):
+    Fr_obj = read_am.OpenAmFile(data,chunk_size=1000000)  
+    frames = Fr_obj.get_frames()
+    hist,sum1 = f(frames.next())
+    for frame in frames:
+         hist_,sum1_ = f(frame)   
+         hist += hist_
+         sum1 += sum1_
+    if visualize:
+        visualize_spectrum(hist,sum1) 
+    return hist,sum1
     
     
     
@@ -396,10 +410,24 @@ def get_side_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=T
         threshold [0,1) - level of cutting of specturum (comparable with the max-height peak)
         visualize - show the distribution
         **argv - arguments to pass to read_files function
+    !note: there're 6 side detectors with strip numbers 11-16; strip №10 - is a veto detector
     Output: spectrs( 2Darray [0..47]x[0..8191] ),summary spectr
     """
-    return get_front_spectrs(data,energy_scale,tof,threshold,visualize,id_mark='==3',**argv)
-
+    #(data,tof=False,threshold=0.04,visualize=True,id_mark='<3',type_scale='channel',type_strip='strip',**argv): 
+    return get_front_spectrs(data,tof,threshold,visualize,id_mark='==3',**argv)
+"""
+def get_am_side_spectrs( data,tof=False,threshold=0.04,visualize=True,**argv):
+    Fr_obj = read_am.OpenAmFile(data,chunk_size=1000000)  
+    frames = Fr_obj.get_frames()
+    hist,sum1 = get_side_spectrs(frames.next(),tof=tof,threshold=threshold,visualize=False)
+    for frame in frames:
+        hist_,sum1_ = get_side_spectrs(frame,tof=tof,threshold=threshold,visualize=False)    
+        hist += hist_
+        sum1 += sum1_
+    if visualize:
+        visualize_spectrum(hist,sum1) 
+    return hist,sum1
+"""
 
 
 def get_back_spectrs(data,tof=False,threshold=0.04,visualize=True,**argv):
@@ -410,6 +438,7 @@ def get_back_spectrs(data,tof=False,threshold=0.04,visualize=True,**argv):
         threshold [0,1) - level of cutting of specturum (comparable with the max-height peak)
         visualize - show the distribution
         **argv - arguments to pass to read_files function
+    !note: there're 128 back detectors, which separated to odd and even numbers (signals are splitted to different electric chains); 
     Output: spectrs( 2Darray [0..47]x[0..8191] ),summary spectr
     """
     #read data 
@@ -472,6 +501,22 @@ def get_back_spectrs(data,tof=False,threshold=0.04,visualize=True,**argv):
         else:
             visualize_spectrum(hist,sum_spectr)
     return hist,sum_spectr
+ 
+"""   
+def get_am_side_spectrs( data,tof=False,threshold=0.04,visualize=True,**argv):
+    Fr_obj = read_am.OpenAmFile(data,chunk_size=1000000)  
+    frames = Fr_obj.get_frames()
+    hist,sum1 = get_back_spectrs(frames.next(),tof=tof,threshold=threshold,visualize=False)
+    for frame in frames:
+        hist_,sum1_ = get_back_spectrs(frame,tof=tof,threshold=threshold,visualize=False)    
+        hist += hist_
+        sum1 += sum1_
+    if visualize:
+        visualize_spectrum(hist,sum1) 
+    return hist,sum1
+"""
+    
+    
     
 def get_front_fission_spectrs(data,energy_scale=True,tof=False,threshold=0.04,visualize=True,**argv): 
     """ 
@@ -638,8 +683,9 @@ if __name__ == '__main__':
     #pos_distr('tsn.459-tsn.461',tof = False, strip_convert=True)
     #frame = read_file('tsn.458',strip_convert=True,energy_scale=True)
 
-    hist,sum_spectr = get_front_spectrs('tsn.31',strip_convert=True,energy_scale=True)
-    hist,sum_spectr = get_back_spectrs('tsn.31',strip_convert=True,energy_scale=True)
+    #hist,sum_spectr = get_front_spectrs('tsn.31',strip_convert=True,energy_scale=True)
+    #hist,sum_spectr = get_back_spectrs('tsn.31',strip_convert=True,energy_scale=True)
+    hist,sum_spectr = get_side_spectrs('tsn.456-tsn.461',threshold=0.005)#,strip_convert=True)
     # tof_distr('tsn.371')
     #frame2 = read_files('tsn.612,tsn.613')
     #time_sinc_distr('tsn.606')

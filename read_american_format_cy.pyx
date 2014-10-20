@@ -13,9 +13,10 @@ import os
 
 
 
-def open_am_file(size,filename,chunk_size):
+def open_am_file(size,fileobj,chunk_size=10000):
     
-    fileobj = open(filename,'rb')
+    start = show_time()
+    #fileobj = open(filename,'rb')
     cdef int block_size = 32
     cdef long int num_blocks = 0
     cdef long int offset = 0
@@ -84,7 +85,7 @@ def open_am_file(size,filename,chunk_size):
                 veto = True
             elif pos != 0:
                 list_channels.append(chan)
-                list_time.append(time)
+                list_time.append(datetime.datetime.fromtimestamp(time))
                 list_tof.append(tof)
                 list_beam.append(bool(beam_on))
                 list_veto.append(veto)
@@ -100,39 +101,28 @@ def open_am_file(size,filename,chunk_size):
                     list_id.append(1)
                     list_strips.append(0)
                     list_back_strips.append(-pos)
-     
-for name in list_files[:31]:
-   Frames = read_american_format_cy.OpenAmFile(name)
-   hist1,sum1 = Frames.apply_func(read_files.get_front_spectrs) 
-   hist = hist.add(hist1,fill_value=0)
-   sum += sum1        
-        if num_blocks % chunk_size == 0:
-            to_datetime = lambda x: datetime.datetime.fromtimestamp(x/1000000)
-            list_time = map(to_datetime,list_time) #Series(list_time).apply(to_datetime)
-           
-            if len(list_id)>0:
-                frame = DF( {'id': list_id,'strip':list_strips,'channel':list_channels,
-                          'time': list_time,
-                          'b_strip 1':list_back_strips,
-                          'beam_marker':list_beam,
-                          'tof':list_tof,
-                          'veto':list_veto
-                          })
-                list_id = []
-                list_strips = []
-                list_channels = []
-                list_time = []
-                list_tof = []
-                list_back_strips = []
-                list_beam = []  
-                list_veto = []
-                yield frame
-            else:
-                raise ValueError('No data')
-    # add the last part of data            
-    to_datetime = lambda x: datetime.datetime.fromtimestamp(x)
-    list_time = map(to_datetime,list_time) 
-    if len(list_id)>0:
+            
+        if ( len(list_id)>0 ) & (num_blocks % chunk_size == 0):
+            #print num_blocks
+            frame = DF( {'id': list_id,'strip':list_strips,'channel':list_channels,
+                      'time': list_time,
+                      'b_strip 1':list_back_strips,
+                      'beam_marker':list_beam,
+                      'tof':list_tof,
+                      'veto':list_veto
+                      })
+            list_id = []
+            list_strips = []
+            list_channels = []
+            list_time = []
+            list_tof = []
+            list_back_strips = []
+            list_beam = []  
+            list_veto = []
+            yield frame
+                     
+    #add the last part of data                
+    if len(list_id)>0 :
         frame = DF( {'id': list_id,'strip':list_strips,'channel':list_channels,
                   'time': list_time,
                   'b_strip 1':list_back_strips,
@@ -140,32 +130,64 @@ for name in list_files[:31]:
                   'tof':list_tof,
                   'veto':list_veto
                   })
-        list_id = []
-        list_strips = []
-        list_channels = []
-        list_time = []
-        list_tof = []
-        list_back_strips = []
-        list_beam = []  
-        list_veto = []
-        fileobj.close()
+        
+        print 'convert to DF completed, time:',show_time() - start
         yield frame
+    
+    
+    fileobj.close()   
+
+""" 
+    for name in list_files[:31]:
+       Frames = read_american_format_cy.OpenAmFile(name)
+       hist1,sum1 = Frames.apply_func(read_files.get_front_spectrs) 
+       hist = hist.add(hist1,fill_value=0)
+       sum += sum1        
+            if num_blocks % chunk_size == 0:
+                to_datetime = lambda x: datetime.datetime.fromtimestamp(x/1000000)
+                list_time = map(to_datetime,list_time) #Series(list_time).apply(to_datetime)
+               
+                if len(list_id)>0:
+                    frame = DF( {'id': list_id,'strip':list_strips,'channel':list_channels,
+                              'time': list_time,
+                              'b_strip 1':list_back_strips,
+                              'beam_marker':list_beam,
+                              'tof':list_tof,
+                              'veto':list_veto
+                              })
+                    list_id = []
+                    list_strips = []
+                    list_channels = []
+                    list_time = []
+                    list_tof = []
+                    list_back_strips = []
+                    list_beam = []  
+                    list_veto = []
+                    yield frame
+                else:
+                    raise ValueError('No data')
+"""
+   
       
 class OpenAmFile:
     """ 
     Class is for getting dataframes from big files.   
-    Return a generator which contains chunks of 10^7 (self.chunk_num) blocks  (each contains a group of events approx. 5-50).
+    Return a generator which contains chunks of 10^7 (self.chunk_size) blocks  (each contains a group of events approx. 5-50).
     Also may apply function and collect out put from each chunk (apply_func)
     """
-    def __init__(self,filename,chunk_num=10000000):
-        self.filename = filename
-        self.size = os.stat(filename).st_size
-        print 'File: %s; size: %dB is ready to load' %(self.filename,self.size)
-        print 'It contains roughly about %d chunks' %(self.size/(chunk_num*56)+1)  
-        self.chunk_num = 10000000
+    def __init__(self,filename,chunk_size=100000):
+        f = open(filename,'rb')
+        if f:
+            self.size = os.stat(filename).st_size
+            self.fileobj = f
+            print 'File: %s; size: %dB is ready to load' %(filename,self.size)
+            print 'It contains roughly about %d chunks' %(self.size/(chunk_size*56)+1)  
+            self.chunk_size = chunk_size
+        else:
+            print 'Error while openning. Please, check up the data file.'
                
     def get_frames(self):
-        return open_am_file(self.size,self.filename,self.chunk_num)
+        return open_am_file(self.size,self.fileobj,chunk_size=self.chunk_size)
         
     def apply_func(self,func):
         frames = self.get_frames()
