@@ -94,7 +94,7 @@ def smooth(x,window_len=11,window='hanning'):
     else:
          w=eval('np.'+window+'(window_len)') 
     y=np.convolve(w/w.sum(),s,mode='valid')
-    y = y[(window_len/2) : -1]
+    y = y[(window_len/2) :-(window_len/2)]# -1]
     #zer = np.zeros(window_len/2)
     #y = np.r_[y,zer]
     
@@ -126,7 +126,7 @@ def search_peaks(data_x,data_y,sigma = 30,wavelet='bartlett',threshold = 0.10):
     xpeaks,ypeaks = np.array(xpeaks),np.array(ypeaks)
     numbers = ypeaks>(ypeaks.max()*threshold)
     ypeaks = ypeaks[numbers]
-    xpeaks = xpeaks[numbers]-1
+    xpeaks = xpeaks[numbers]#-1
     return xpeaks, ypeaks
 
     

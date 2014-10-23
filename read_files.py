@@ -301,7 +301,7 @@ def visualize_spectrum(hist,sum_spectr,window=None):
     x,y = hist.shape
     y = hist.columns#np.arange(1,y+1)
     #in case of energy scale i use sum by window to compress spectr and make peaks more distinct
-    x = np.arange(1,x+1)*window if window else np.arange(1,x+1)
+    x = np.arange(x)*window + 1 if window else np.arange(1,x+1)
     
     xgrid, ygrid = np.meshgrid(x,y)
     a = ax1.pcolormesh(xgrid,ygrid,hist.as_matrix().T)
@@ -325,7 +325,7 @@ def rolling_window(a, window):
 def window_sum(a,n=4):
     return np.sum(rolling_window(np.array(a),n),axis=1)[::n]    
 
-def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,id_mark='<3',type_scale='channel',type_strip='strip',**argv): 
+def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,window=False,id_mark='<3',type_scale='channel',type_strip='strip',**argv): 
     """ energy_scale=True,
     Get amplitude spectrs of front detectors from raw data.
         energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
@@ -353,14 +353,19 @@ def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,id_mark='<3',
     
     #choose scale
     ysize = len(spectr)
-    xsize=np.arange(8192)
+    xsize=8192
     energy_scale = False
+    #print window	
     if 'energy_scale' in argv:
         if argv['energy_scale']:
             energy_scale = True
             window = 8
-            xsize = np.arange(20000)[::window]
-            
+            xsize = 20000					
+    if window:
+		xsize=np.arange(1,xsize,window)
+    else:
+         xsize=np.arange(1,xsize)
+    
     #collect histograms
     list_hist = []
     list_columns = []
@@ -368,7 +373,7 @@ def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,id_mark='<3',
         list_hist.append( np.histogram(group,bins = xsize)[0][1:] )
         list_columns.append(name)
     hist = DF(np.array(list_hist).T,columns = list_columns)
-    
+    hist.index = xsize[1:-1]
     #sum
     sum_spectr = list_hist[0]
     for i in range(1,len(list_hist)):
@@ -379,7 +384,7 @@ def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,id_mark='<3',
     
      #visualisation
     if visualize:
-        if energy_scale: 
+        if energy_scale or window: 
             visualize_spectrum(hist,sum_spectr,window=window)
         else:
             visualize_spectrum(hist,sum_spectr)
@@ -682,10 +687,14 @@ if __name__ == '__main__':
     #frame1 = read_files('tsn.459',strlength=14,energy_scale=True)
     #pos_distr('tsn.459-tsn.461',tof = False, strip_convert=True)
     #frame = read_file('tsn.458',strip_convert=True,energy_scale=True)
-
-    #hist,sum_spectr = get_front_spectrs('tsn.31',strip_convert=True,energy_scale=True)
+    fig,ax = plt.subplots(2,1,sharex=True)
+    hist,sum_spectr = get_front_spectrs('tsn.164',strip_convert=True)
+    ax[0].plot(hist[2],linestyle='steps')
+    hist,sum_spectr = get_front_spectrs('tsn.164',window=7,strip_convert=True)#,energy_scale=True)
+    ax[1].plot(hist.index,hist[2],linestyle='steps')
+    plt.show()
     #hist,sum_spectr = get_back_spectrs('tsn.31',strip_convert=True,energy_scale=True)
-    hist,sum_spectr = get_side_spectrs('tsn.456-tsn.461',threshold=0.005)#,strip_convert=True)
+    #hist,sum_spectr = get_side_spectrs('tsn.164',threshold=0.005)#,strip_convert=True)
     # tof_distr('tsn.371')
     #frame2 = read_files('tsn.612,tsn.613')
     #time_sinc_distr('tsn.606')
