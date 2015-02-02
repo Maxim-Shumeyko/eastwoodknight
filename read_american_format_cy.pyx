@@ -14,6 +14,18 @@ import os
 
 
 def open_am_file(size,fileobj,chunk_size=10000):
+	"""
+	Read events from binary file.
+	Each event includes
+		id: 1-front, 3-side, 4-back
+		strip: (1,48)-front, (1,6)-side 
+		channel - amplitudes
+		time 
+		b_strip 1 - strip number for back detectors (1,128)-back
+		beam_marker
+		tof
+		veto
+	"""
     
     start = show_time()
     #fileobj = open(filename,'rb')
@@ -94,16 +106,17 @@ def open_am_file(size,fileobj,chunk_size=10000):
                     list_strips.append(pos-102)
                     list_back_strips.append(0)
                 elif pos> 0 and pos < 49: #front detectors
-                    list_id.append(0)
+                    list_id.append(1)
                     list_strips.append(pos)
                     list_back_strips.append(0)
                 elif pos < 0: #back_detectors
-                    list_id.append(1)
+                    list_id.append(4)  
                     list_strips.append(0)
                     list_back_strips.append(-pos)
             
         if ( len(list_id)>0 ) & (num_blocks % chunk_size == 0):
             #print num_blocks
+		   
             frame = DF( {'id': list_id,'strip':list_strips,'channel':list_channels,
                       'time': list_time,
                       'b_strip 1':list_back_strips,
