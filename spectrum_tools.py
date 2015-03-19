@@ -101,120 +101,92 @@ def smooth(x,window_len=11,window='hanning'):
     return y
   
   
-def search_peaks(data_x,data_y,sigma = 30,wavelet='hanning',threshold = 0.10): #bartlett
+def search_peaks(data_x,data_y,parameters): #bartlett hanning
     """
     Based on scipy.signal.find_peaks_cwt peak-finding tool.
     threshold parameter allow to cut spectrum on the given level.
     Return 2 arrays, containing x and y coordinated of found peaks. 'ricker'
     """
-    print wavelet
-    f_wavelet = eval('signal.'+wavelet)
-    peak_id = signal.find_peaks_cwt(data_y,np.arange(1,sigma),wavelet=f_wavelet)
+    data_x, data_y = np.array(data_x), np.array(data_y)
+    f_wavelet = eval('signal.'+parameters.wavelet)
+    peak_id = signal.find_peaks_cwt(data_y,widths=parameters.widths,wavelet=f_wavelet,min_length=parameters.min_length,\
+                                    min_snr=parameters.min_snr, noise_perc=parameters.noise_perc)
+    #print 'peak_id',peak_id
+    if len(peak_id)==0:
+        raise Exception('No peak was founded')
     peak_id = np.array(peak_id) - 1
-    xpeaks,ypeaks=[],[]
-    for i in peak_id:
-        i_sample = data_y[i-3:i+3] 
-        sample_max_id = 0
-        for j in xrange(len(i_sample)):
-            if i_sample[j] > i_sample[sample_max_id]:
-                sample_max_id = j
-        sample_max_id += i-3
-        xpeaks.append(data_x[sample_max_id])
-        ypeaks.append(data_y[sample_max_id])                     
-    
-     
-    xpeaks,ypeaks = np.array(xpeaks),np.array(ypeaks)
-    numbers = ypeaks>(ypeaks.max()*threshold)
+    xpeaks,ypeaks = data_x[peak_id], data_y[peak_id]
+    numbers = ypeaks>(ypeaks.max()*parameters.noise_perc)
     ypeaks = ypeaks[numbers]
     xpeaks = xpeaks[numbers]#-1
     return xpeaks, ypeaks
 
+
+
+class Search_peak_error(Exception): pass
     
-"""
-    MAIN TEST
-"""    
+def search_peaks1(data_x,data_y,parameters): #bartlett hanning
+    """
+    Based on scipy.signal.find_peaks_cwt peak-finding tool.
+    threshold parameter allow to cut spectrum on the given level.
+    Return 2 arrays, containing x and y coordinated of found peaks. 'ricker'
+    """
+    data_x, data_y = np.array(data_x), np.array(data_y)
+    f_wavelet = eval('signal.'+parameters.wavelet)
+    peak_id = signal.find_peaks_cwt(data_y,widths=parameters.widths,wavelet=f_wavelet,min_length=parameters.min_length,\
+                                    min_snr=parameters.min_snr, noise_perc=parameters.noise_perc)
+    #print 'peak_id',peak_id
+    if len(peak_id)==0:
+        raise Search_peak_error,'No peak was founded'
+    peak_id = np.array(peak_id) - 1
+    xpeaks,ypeaks = data_x[peak_id], data_y[peak_id]
+    numbers = ypeaks>(ypeaks.max()*parameters.noise_perc)
+    ypeaks = ypeaks[numbers]
+    xpeaks = xpeaks[numbers]#-1
+    return xpeaks, ypeaks
+#    print wavelet
+#    f_wavelet = eval('signal.'+wavelet)
+#    peak_id = signal.find_peaks_cwt(data_y,np.arange(1,sigma),wavelet=f_wavelet)
+#    peak_id = np.array(peak_id) - 1
+#    xpeaks,ypeaks=[],[]
+#    for i in peak_id:
+#        i_sample = data_y[i-3:i+3] 
+#        sample_max_id = 0
+#        for j in xrange(len(i_sample)):
+#            if i_sample[j] > i_sample[sample_max_id]:
+#                sample_max_id = j
+#        sample_max_id += i-3
+#        xpeaks.append(data_x[sample_max_id])
+#        ypeaks.append(data_y[sample_max_id])                      
+#    xpeaks,ypeaks = np.array(xpeaks),np.array(ypeaks)
+#    numbers = ypeaks>(ypeaks.max()*threshold)
+#    ypeaks = ypeaks[numbers]
+#    xpeaks = xpeaks[numbers]#-1
+
+
+    
+   
 if __name__ == '__main__':
     
-    """
-    xsample = np.arange(1,101)
-    def peak(x,x0,sigm):
-        return 200*np.exp( - ((x-x0)/sigm)**2/2 )
-    sample = peak(xsample,30,3) + peak(xsample,47,2) + peak(xsample,84,3)+ np.random.randint(6,35,len(xsample))
-    fig,ax = plt.subplots(2,1)
-    ax[0].plot(sample,linestyle='steps')   
-    """
+    #go to the data folder
+    import os
+    os.chdir(r'./exp_data')
     
-    """ INIT"""
-    ind = 30
-    sample,sum_spectr = get_front_spectrs('tsn.456-tsn.458',visualize = False)
-    """MAKE AXES"""
+    xsample, ch_spectr, en_spectr = np.loadtxt('normal_spectrs.txt')
+#    """MAKE AXES"""
     fig,ax = plt.subplots(2,1,sharex=True)
-    ax[0].plot(sample[ind],linestyle='steps') 
-    """PROCESSING"""
-    hists = []
-    xmin, xmax = 1700, 3600
-    for i in sample:
-        hists.append( i[xmin:xmax] )
-    sample = hists
-    sample[ind] = smooth(sample[ind],9,'hanning')
-    sample_background = background(sample[ind],parameters='BACK1_ORDER8,BACK1_INCLUDE_COMPTON')
-    sample[ind] -= sample_background
-    sample[ind][ sample[ind]<0 ] = 0
-    #ax[1].plot(sample[ind],linestyle='steps',color='b') 
-    hist = smooth(sample[ind],5,'bartlett')
-    hist = sample[ind]
-    #xsample = np.arange(xmin,xmax)
-    xsample = np.arange(xmin,xmin+len(hist))
-    xpeaks,ypeaks = search_peaks(xsample,hist,threshold=0.35)
-    #collecting the the largest 11 peaks
-    dic_peaks = dict( zip(ypeaks,xpeaks) )
-    dict1 = {}
-    if len(dic_peaks)>=11: 
-        count_peaks = 11
-    else:
-        count_peaks = len(dic_peaks)
-    for i in sorted(dic_peaks.keys())[-1:-count_peaks:-1]:
-        dict1[i] = dic_peaks[i]
-    #ypeaks,xpeaks = dict1.keys(),dict1.values()
-    #sorting by xpeaks-column
-    dict2 = {k: v for v,k in dict1.iteritems() }
-    xpeaks,ypeaks = [],[]
-    for k,v in sorted(dict2.iteritems() ):
-        xpeaks.append(k)
-        ypeaks.append(v)
-        
-    """selecting valid peaks"""
-    print 'Xpeaks: ',xpeaks
-    
-    def get_numb(x,list1):
-        for i,j in enumerate(list1):
-            if j == x:
-                return i
-    # missing of 2nd valid from left            
-    if (xpeaks[2]-xpeaks[1])> (xpeaks[3]-xpeaks[2]):
-        print 'YES'
-        xstart,xstop = get_numb(xpeaks[0],xsample),get_numb(xpeaks[1],xsample)
-        print xstart, xstop
-        if xstop - xstart != 0:
-            extra_xpeaks,extra_ypeaks = search_peaks(xsample[xstart:xstop],\
-                    hist[xstart:xstop],threshold = 0.12)
-            print '!!',extra_xpeaks,extra_ypeaks
-            if len(extra_xpeaks)>=3:
-                middle_peak_num = get_numb(sorted(extra_ypeaks)[-3], extra_ypeaks)
-                xpeaks.insert(1,extra_xpeaks[middle_peak_num])
-                ypeaks.insert(1,extra_ypeaks[middle_peak_num])
-    # deleting 2 needless peaks after 3nd
-    xpeaks.pop(3)
-    ypeaks.pop(3)
-    xpeaks.pop(3)
-    ypeaks.pop(3)
-    # deleting of 4 needless peak from right
-    if (len(xpeaks) >= 5) and \
-        (xpeaks[-4] > xpeaks[-3] - 0.75*(xpeaks[-2]-xpeaks[-3]) ):
-        xpeaks.pop(-4)
-        ypeaks.pop(-4)
-    """OUTPUT"""
+    ax[0].plot(xsample,ch_spectr,linestyle='steps') 
+#    """PROCESSING"""
+    class record: pass
+    search_properties = record()
+    search_properties.widths=np.arange(1,8)
+    search_properties.wavelet= 'ricker'
+    search_properties.min_length=3
+    search_properties.min_snr=1.0
+    search_properties.noise_perc=0.10
+    xpeaks,ypeaks = search_peaks(xsample,ch_spectr,search_properties)
+#   OUTPUT
     print xpeaks, ypeaks
-    ax[1].plot(xsample,hist,linestyle='steps',color='r',linewidth=3) 
+    ax[1].plot(xsample,ch_spectr,linestyle='steps',color='r',linewidth=3) 
     ax[1].plot(xpeaks,ypeaks,'kD')
     plt.plot()

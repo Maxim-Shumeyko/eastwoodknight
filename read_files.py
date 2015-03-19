@@ -321,7 +321,7 @@ def visualize_spectrum(hist,sum_spectr):#,window=None):
     fig.colorbar(a,ax=ax1,ticks=ticks)
     #axis = [x.min(),x.max(),y.min(),y.max()]
     #ax1.axis( axis )
-    ax2.axis( xmax = max(x) )
+    ax2.axis( xmax = max(x), ymax = max(sum_spectr) )
     plt.show()
 
 
@@ -335,7 +335,7 @@ def rolling_window(a, window):
 def window_sum(a,n=4):
     return np.sum(rolling_window(np.array(a),n),axis=1)[::n]    
 
-def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,window=False,id_mark='<3',type_scale='channel',type_strip='strip',**argv): 
+def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,xsize=8192,window=False,id_mark='<3',type_scale='channel',type_strip='strip',**argv): 
     """ energy_scale=True,
     Get amplitude spectrs of front detectors from raw data.
         energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
@@ -363,7 +363,7 @@ def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,window=False,
     
     #choose scale
     ysize = len(spectr)
-    xsize=8192
+    #xsize=8192
     energy_scale = False
     #choose window	
     if 'energy_scale' in argv:
@@ -374,7 +374,7 @@ def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,window=False,
     if window:
 		xsample=np.arange(1,xsize,window)
     else:
-         xsample=np.arange(1,xsize)
+        xsample=np.arange(1,xsize)
     
     #collect histograms
     list_hist = []
@@ -516,28 +516,102 @@ def get_back_spectrs(data,tof=False,threshold=0.04,visualize=True,**argv):
     return hist,sum_spectr
  
 
+def get_am_back_spectrs(data,tof=False,threshold=0.04,visualize=True,**argv):
+    """ energy_scale=True,
+    Get amplitude spectrs of back detectors from raw data.
+        energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
+        tof - choose the type of include events by the TOF-mark
+        threshold [0,1) - level of cutting of specturum (comparable with the max-height peak)
+        visualize - show the distribution
+        **argv - arguments to pass to read_files function
+    !note: there're 128 back detectors, which separated to odd and even numbers (signals are splitted to different electric chains); 
+    Output: spectrs( 2Darray [0..47]x[0..8191] ),summary spectr
+    """
+    #read data 
+    sample = read_files(data,**argv)
+    sample = sample[sample['id']==4]
+    print sample
+    #tof 
+    if tof:
+        sample = sample[ sample['tof']>0 ]
+    else:
+        sample = sample[ sample['tof']==0]
+    spectr1 = sample['channel'].groupby(sample['b_strip 1']) #odd numbers of strips
+    #spectr2 = sample['channel'].groupby(sample['b_strip 2']) #even numbers of strips
+    del sample
+    if len(spectr1) == 0:
+        raise ValueError('No such events or empty file')
+    
+    #choose scale
+    xsize = np.arange(16384)
+    energy_scale = False
+    if 'energy_scale' in argv:
+        if argv['energy_scale']:
+            energy_scale = True
+            xsize = np.arange(20000)
+            window = 8
+            xsize = xsize[::window ]
+            
+    #collect histograms
+    list_hist = []
+    names = []
+#    for (name1,group1) in spectr2:
+#        #collecting histograms from odd strips
+#        if float(name1) % 2 == 1:
+#            names.append(name1)
+#            #if 'energy_scale' in argv: #sum by window to compress spectrums
+#            #    if argv['energy_scale']:
+#            #        group1 = window_sum(group1,window )
+#            list_hist.append( np.histogram(group1,bins = xsize)[0][1:] )
+            
+    for (name,group) in spectr1:
+        print name,group
+        #if (float(name2) % 2 == 0)&(float(name2)!=0):
+        names.append(name)
+        list_hist.append( np.histogram(group,bins = xsize)[0][1:] )
+    hist = np.vstack( (list_hist[0],list_hist[1]))
+    for i in xrange(2,len(list_hist)):
+        hist = np.vstack( (hist,list_hist[i]))  
+    ysize = hist.shape[0]
+    
+    #calculate the sum of spectrums
+    sum_spectr = list_hist[0]
+    for i in xrange(1,len(list_hist)):
+        sum_spectr += list_hist[i]     
+    hist = pd.DataFrame(hist.T,columns=names)
+    hist = hist.sort_index(axis=1)
+    hist[ hist > max(hist.max())*threshold ] = max(hist.max())*threshold
+    
+    #visualisation
+    if visualize:
+        if energy_scale:
+            visualize_spectrum(hist,sum_spectr,window=window)
+        else:
+            visualize_spectrum(hist,sum_spectr)
+    return hist,sum_spectr
+    
+    
 
-def get_focal_side_indexes(frame):      
+def get_focal_side_indexes(frame,strip):      
 	msv_dt = frame['synchronization_time'].diff().abs() < 20  
- 
 	#find synchronized pairs focale-side
-	set_side1 = msv_dt  & (frame['id']==3)
+	set_side1 = msv_dt  & (frame['id']==3) & (frame['strip'] == strip)
 	set_side1 &= np.roll(frame['id']<3,1)  
 	set_front1 = np.roll(set_side1,-1)   
    
 	#find synchronized pairs side-focal
-	set_front2 = msv_dt & (frame['id']<3)
+	set_front2 = msv_dt & (frame['id']<3) 
 	set_front2 &= np.roll(frame['id']==3,1)
 	set_side2 = np.roll(set_front2,-1)
 	return set_side1,set_front1, set_side2,set_front2
 				
 
-def get_side_calibration_spectrs(frame,side_coefs = get_calibration_coefficients('clbr_coef_side.txt'),front_coefs = get_calibration_coefficients('clbr_coef_front.txt'),step=10):
+def get_side_calibration_spectrs(frame,side_coefs = get_calibration_coefficients('clbr_coef_side.txt'),front_coefs = get_calibration_coefficients('clbr_coef_front.txt'),step=10,strip = 0):
     energy_spectrs = []
     channel_spectrs = []
      
     #find pairs of front-side and side-front events
-    set_side1,set_front1,set_side2,set_front2 = get_focal_side_indexes(frame)
+    set_side1,set_front1,set_side2,set_front2 = get_focal_side_indexes(frame,strip+11)
      
     	# read side calibration coefficients
     ff_clbr = lambda st,ch: front_coefs[0][st-1]*ch + front_coefs[1][st-1]
@@ -579,14 +653,16 @@ def get_side_calibration_spectrs(frame,side_coefs = get_calibration_coefficients
             
     #summarize histograms of f-s and s-f events by strips
     xsample = channel_spectrs[0][1][1:]
-    ch_spectrs = []
-    en_spectrs = []
-    for i in xrange(6):
-        ch_spectrs.append(np.array(channel_spectrs[0][0]) + np.array(channel_spectrs[6][0]))
-        en_spectrs.append(np.array(energy_spectrs[0][0]) + np.array(energy_spectrs[6][0]))
-        del channel_spectrs[0]
-        del energy_spectrs[0]
-    return xsample,ch_spectrs,en_spectrs    			
+#    ch_spectrs = []
+#    en_spectrs = []
+#    for i in xrange(6):
+#        ch_spectrs.append(np.array(channel_spectrs[0][0]) + np.array(channel_spectrs[6][0]))
+#        en_spectrs.append(np.array(energy_spectrs[0][0]) + np.array(energy_spectrs[6][0]))
+#        del channel_spectrs[0]
+#        del energy_spectrs[0]
+    channel_spectrs = np.array(channel_spectrs[0][0]) + np.array(channel_spectrs[1][0])
+    energy_spectrs = np.array(energy_spectrs[0][0]) + np.array(energy_spectrs[1][0])
+    return xsample,channel_spectrs,energy_spectrs#ch_spectrs,en_spectrs     
 
 		
     
@@ -752,46 +828,5 @@ def diff_time_distr(filename,xmax=100):
 if __name__ == '__main__':
     print 'is run'
     import os
-    os.chdir(r'./exp_data')
-    fig,ax = plt.subplots(2,1)
-#read one or several raw files   
-#    frame = read_file('tsn.35',strip_convert=True)
-#    frame = read_files('tsn.611-tsn.615')
-#use strip_convert to make strip numbers coincide with true physical sequence of cable connections
-#use energy_scale to apply calibration coefficients (files with coefficients can be also included)	
-#    frame = read_file('tsn.458',strip_convert=True,energy_scale=True)
-	
-#get distribution of back spectrs
-#    hist,sum_spectr = get_back_spectrs('tsn.164',strip_convert=True,threshold=1.0,energy_scale=True)
-#    x,y = hist.shape
-#    xsample=np.arange(0,x)*8+1
-#    ax[0].plot(xsample,hist[2],linestyle='steps')
-#    ax[0].set_xlim(1,x*8+1)
-#and front spectrs
-    hist,sum_spectr = get_front_spectrs('tns.35-tsn.50',energy_scale=True) #'energy_scale' provides energy spectr    
-    ax[1].plot(hist.index,sum_spectr,linestyle='steps')
-    plt.show()
-				
-##get and show focal-side energy spectrs	
-#    import os
 #    os.chdir(r'./exp_data')
-#    
-#    side_coefs = get_calibration_coefficients('clbr_coef_side.txt')
-#    frame = read_files('tns.35-tsn.61',energy_scale = False, strip_convert = True)
-#    ch_spectrs, en_spectrs = get_side_calibration_spectrs(frame, side_coefs)
-#    visualize_side_spectr(1,ch_spectrs)
-#    xmin,xmax = [],[]
-#    for i in xrange(6):
-#        xmin.append( int((5500 - side_coefs[1][i])/side_coefs[0][i]) )
-#        xmax.append( int((10500 - side_coefs[1][i])/side_coefs[0][i]) )
-#    xmin,xmax = np.array(xmin), np.array(xmax)
-#                                    
-#    Alpha_energies = [6040,6143.8,6264,6899.2,7137,7922,8699,9261]#[7922,8699,9261]
-#    ind = 2
-#    xpeaks,coef=calibration.calibrate_area(ch_spectrs[ind][1][1:],ch_spectrs[ind][0],xmin[ind],xmax[ind],threshold=0.08,sigma=3,visualize=True,energies=Alpha_energies)
-#    print calibration.make_report(xpeaks,coef,i,energies=Alpha_energies)	
-
-
-#read am file
-#    frame1 = read_am.OpenAmFile('14Jan_15_08.bin',chunk_size=100000000).get_frames().next()
-#    hist,hsum = get_front_spectrs(frame1,threshold=1)
+#    fig,ax = plt.subplots(2,1)
