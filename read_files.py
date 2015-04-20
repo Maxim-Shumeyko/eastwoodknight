@@ -38,10 +38,12 @@ import matplotlib.pyplot as plt
 from mayavi import mlab
 from matplotlib import cm
 import read_american_format_cy as read_am
+import os
 #import calibration
 #import Visualisator
 
-
+#all coefficients arrays start from 0, like [0..47] or [0..127]
+#so all such array are to use in this way: coefs[0,strip_number-1] + coefs[1,strip_number-1]
 def get_calibration_coefficients(filename):
     """
     Return coefficients from file: array 2xN
@@ -50,19 +52,46 @@ def get_calibration_coefficients(filename):
     f = open(filename,'r')
     s = f.read()[1:]
     s = s.split('\n\n')
-    indexes, coefs= [],[]
+    #indexes, coefs= [],[]
+    coefs = np.empty((2,128))*np.nan
     for line in s:
         line = line.split('\n')[0].split()
-        indexes.append(int(line[0]))
-        coefs.append( [float(line[3]),float(line[7])] )
-    coefs = np.array(coefs).T #pd.DataFrame(np.array(coefs),index=indexes)
+        #indexes.append(int(line[0]))
+        #coefs.append( [float(line[3]),float(line[7])] )
+        ind = int(line[0])-1
+        coefs[0][ind] = float(line[3])
+        coefs[1][ind] = float(line[7])
+    #coefs = np.array(coefs).T #pd.DataFrame(np.array(coefs),index=indexes)
     f.close()
     return coefs
-	
+    
+    
+def get_fission_calibration_coefficients(filename):
+    """
+    Return coefficients from file: array 2xN
+    coefs[0] - A, coefs[1] - B
+    """
+    f = open(filename,'r')
+    s = f.read()[1:]
+    s = s.split('\n\n')
+    #indexes, coefs= [],[]
+    coefs = np.empty((3,128))*np.nan
+    for line in s:
+        line = line.split('\n')[0].split()
+        #indexes.append(int(line[0]))
+        #coefs.append( [float(line[3]),float(line[7])] )
+        ind = int(line[0])-1
+        coefs[0][ind] = float(line[3])
+        coefs[1][ind] = float(line[7])
+        coefs[2][ind] = float(line[11])
+    #coefs = np.array(coefs).T #pd.DataFrame(np.array(coefs),index=indexes)
+    f.close()
+    return coefs
+
 
 def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
               time_corr=False,strip_convert=False, clbr_front_filename='/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_front.txt',\
-			 clbr_back_filename='/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_back.txt'):
+			  clbr_back_filename='/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_back.txt'):
 
      data = np.fromfile(filename, dtype = 'uint16', count = -1, sep = '').reshape(-1,strlength)#[:,0:9]
      beam_marker = (data[:,0]>>4)% 16
@@ -241,7 +270,7 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
      time_hours %=24 
      
      #TOF
-     tof = data[:,6]%8192
+     tof = data[:,6]%4096#8192
      
      frame = pd.DataFrame( {'id': indexes,'strip':strips,'channel':channel,'Fchannel':Fchannel,
                   'time_hours':time_hours,'time_min':time_min,'time_sec':time_sec,'time_mks':time_mks,
@@ -263,7 +292,13 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
      
      
 def read_files(filenames,**argv):
-    
+    """
+    Valid filename's patterns:
+    tsn.xxx
+    tsn.xxx, tsn.yyy, tsn.zzz, ...
+    tsn.xxx - tsn.yyy
+    tsn.xxx-tsn.yyy and etc.
+    """
     if type(filenames) == type(pd.DataFrame()):
         return filenames
     
@@ -274,7 +309,7 @@ def read_files(filenames,**argv):
         if '-' in s:
             fn = s.split('-')
             if len(fn) > 2:
-                raise ValueError('read_files: Wrong string format')
+                raise ValueError('read_files: Incorrect filenames')
             numb = []
             for i in fn:
                 i.replace(' ','')
@@ -293,12 +328,16 @@ def read_files(filenames,**argv):
     elif len(filenames) < 8 and ('tsn.' in filenames):
         names = [filenames,]
     else:
-        raise ValueError('read_files: Bad string format')
+        raise ValueError('read_files: Incorrect filenames')
         
     frame = pd.DataFrame([])
     
     for i in names:
-        frame = pd.concat([frame,read_file(i,**argv)],ignore_index=True)
+        try:
+            frame = pd.concat([frame,read_file(i,**argv)],ignore_index=True)
+        except IOError,e:
+            print e
+            continue
         
     return frame
             
@@ -350,10 +389,13 @@ def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,xsize=8192,wi
     sample = read_files(data,**argv)
     
     #choose time-of-flight's subset  
-    if tof:
+    if tof == 'all':
+        pass
+    elif tof:
         sample = sample[ sample['tof']>0 ]
     else:
         sample = sample[ sample['tof']==0]
+
     exec( "sample = sample[ sample['id']"+id_mark+"]" ) #select events with needed id marks
     sample = sample[sample[type_strip]>0]
     spectr = sample[type_scale].groupby(sample[type_strip])
@@ -392,7 +434,8 @@ def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,xsize=8192,wi
     hist = hist.sort_index(axis=1)
     hist[ hist > max(hist.max())*threshold ] = max(hist.max())*threshold
     
-    visualize_spectrum(hist,sum_spectr)
+    if visualize:
+        visualize_spectrum(hist,sum_spectr)
             
     return hist,sum_spectr
         
@@ -828,5 +871,9 @@ def diff_time_distr(filename,xmax=100):
 if __name__ == '__main__':
     print 'is run'
     import os
-#    os.chdir(r'./exp_data')
+    os.chdir(r'./Files88_91')
+    frame = read_files('tsn.88-tsn.91',strip_convert=True)
+    hist,hsum  = get_front_spectrs(frame,tof=False,type_scale='Fchannel')
+    hist1,hsum1 = get_front_spectrs(frame,tof=True,type_scale='Fchannel')
+    
 #    fig,ax = plt.subplots(2,1)
