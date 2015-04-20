@@ -44,7 +44,26 @@ def process(channel,energy,strip,coefs):
     #fit by exp
     coef = fit_exp(p0,channel1,energy1,func,show=False)
     return coef,channel1,energy1
+				
+def process1(channel,energy,strip):
+    energy1 = np.array(energy)[:7]
+    channel1 = np.array(channel)[:7]
+    p0=(6000,450,-1000)
+    coef1 = fit_exp(p0,channel1,energy1,func,show=False)			
+    energy2 = np.array(energy)[7:]
+    channel2 = np.array(channel)[7:]
+    p0 = (8000,-8000,-100)			
+    coef2 = fit_exp(p0,channel2,energy2,func,show=False)
+    return coef1,channel1,energy1,	coef2,channel2,energy2
+				
+def process2(channel,energy,strip):
+    #print len(channel),len(energy)
+    energy1 = np.array(energy)
+    channel1 = np.array(channel)
+    coef1 = fit_exp(p0,channel1,energy1,func,show=False)			
     
+    return coef1,channel1,energy1
+
 #def read_table(filename): 
 #    return pd.read_table(filename,sep='\s+',skiprows=1)
     """
@@ -56,6 +75,7 @@ def process(channel,energy,strip,coefs):
     """
     
 def write_strip_report(Fobj,strip,coef,channel,energy):
+    coef = coef[0] 
     Fobj.write('Strip%-2s %d %2s= %4.2f ; %2s= %4.2f ; %2s= %4.2f \n' %('№',strip,'A',coef[0],'B',coef[1],'C',coef[2]))  
     Fobj.write('  %-5s %-6s   %-11s' %('chan','energy','calc_energy \n'))
     energy1 = func(coef,channel)    
@@ -66,11 +86,64 @@ def write_strip_report(Fobj,strip,coef,channel,energy):
 if __name__ == '__main__':
     
     p0=(6000,450,-1000)
-    coefs_front,coefs_back = read_coefs('AB.txt')
-    list_front = ['Sheet1.t','Sheet2.t','Sheet3.t']
-    list_back = ['Sheet4.t','Sheet5.t','Sheet6.t','Sheet7.t','Sheet8.t','Sheet9.t','Sheet10.t','Sheet11.t'] 
-    f = open('Calibration_report_Sep2014.txt','w')
+    #p0 = (8000,-8000,-100)
     
+    list_front = ['Sheet1.t','Sheet2.t','Sheet3.t']
+    #list_back = ['Sheet4.t','Sheet5.t','Sheet6.t','Sheet7.t','Sheet8.t','Sheet9.t','Sheet10.t','Sheet11.t'] 
+    list_back = ['Sheet1b.t','Sheet2b.t','Sheet3b.t','Sheet4b.t','Sheet5b.t','Sheet6b.t','Sheet7b.t','Sheet8b.t']
+    f = open('Calibration_report_24Oct2014.txt','w')
+
+    A,B,C = [],[],[]
+    f.write('Front detectors coefficients\n')
+    ind = np.arange(1,17)
+    for filename in list_front:
+        frame = pd.read_table(filename,sep='\s+',skiprows=1)
+        for i,col in enumerate(frame.columns[1:]):
+			indx = frame[col].notnull()
+			if indx.sum() == 0:
+				continue
+			else:
+				coef, channel, energy = process2(frame[col][indx],frame['E'][indx],ind[i])
+				A.append(coef[0][0])
+				B.append(coef[0][1])
+				C.append(coef[0][2])
+				#print '\n coef:',coef, channel, energy, coef2,channel2,energy2
+				write_strip_report(f,ind[i],coef,channel,energy)
+				#write_strip_report(f,ind[i],coef2,channel2,energy2)
+				#f.write('\n\n')
+        ind += 16  
+    
+
+    f.write('\n\n')				
+    for Lst in [A,B,C]:
+        f.write('\n\n')
+        k = 0
+        for j in Lst:
+            f.write('%4.2f,' %(j) )
+            k += 1
+            if k == 6:
+			   f.write('\n')
+			   k = 0
+    f.close()    
+	
+							
+#"""			
+				
+"""	
+    f.write('Back detectors coefficients\n')
+    ind = np.arange(1,17)
+    for filename in list_back:
+        frame = pd.read_table(filename,sep='\s+',skiprows=1)
+        for i,col in enumerate(frame.columns[1:]):
+			coef, channel, energy= process2(frame[col],frame['E'],ind[i])
+			#print '\n coef:',coef, channel, energy, coef2,channel2,energy2
+			write_strip_report(f,ind[i],coef,channel,energy)
+        ind += 16    
+    f.close()
+"""
+""" September version
+	coefs_front,coefs_back = read_coefs('AB.txt')
+	
     f.write('Front detectors coefficients\n')
     ind = np.arange(1,17)
     for filename in list_front:
@@ -91,4 +164,4 @@ if __name__ == '__main__':
         ind += 16
     
     f.close()
-    
+"""

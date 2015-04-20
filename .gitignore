@@ -22,6 +22,7 @@ untitled3.py
 *.pyc
 
 #unnecessary folders
+pandas processing/
 build/
 american data/
 calibration/

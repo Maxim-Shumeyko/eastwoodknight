@@ -78,11 +78,11 @@ def smooth(x,window_len=11,window='hanning'):
      scipy.signal.lfilter  
     """
     if x.ndim != 1:
-         raise ValueError, "smooth only accepts 1 dimension arrays."
+         raise ValueError, "spectrum.tools smooth: Only 1-dimension arrays are valid."
     if x.size < window_len:
-         raise ValueError, "Input vector needs to be bigger than window size."
+         raise ValueError, "spectrum.tools smooth: Input vector should be bigger than window size."
     if window_len<3:
-         raise ValueError, "Too small window length."
+         raise ValueError, "spectrum.tools smooth: Window length is too small ."
  
     if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
          raise ValueError, "Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'"
