@@ -257,8 +257,8 @@ if __name__ == '__main__':
     #read data
     os.chdir(r'./Files88_91')
     frame = read_files('tsn.88-tsn.91',strip_convert=True)
-    hist,hsum  = get_front_spectrs(frame,tof=False,type_scale='Fchannel',visualize=True)
-    hist1,hsum1 = get_front_spectrs(frame,tof=True,type_scale='Fchannel',visualize=True)
+    hist,hsum  = get_front_spectrs(frame,tof=False,type_scale='fission_channel',visualize=True)
+    hist1,hsum1 = get_front_spectrs(frame,tof=True,type_scale='fission_channel',visualize=True)
     
     #select a spectrum including alpha-peaks from events without time-of-flight mark (tof=False, first 100 channels)
     #and a peak of scattered ions which lies in area > 100 channel

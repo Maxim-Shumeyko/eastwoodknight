@@ -58,6 +58,7 @@ def get_calibration_coefficients(filename):
         line = line.split('\n')[0].split()
         #indexes.append(int(line[0]))
         #coefs.append( [float(line[3]),float(line[7])] )
+        if len(line) == 0: break
         ind = int(line[0])-1
         coefs[0][ind] = float(line[3])
         coefs[1][ind] = float(line[7])
@@ -89,19 +90,48 @@ def get_fission_calibration_coefficients(filename):
     return coefs
 
 
-def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
-              time_corr=False,strip_convert=False, clbr_front_filename='/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_front.txt',\
-			  clbr_back_filename='/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_back.txt'):
+def read_file(filename,write_file=False,energy_scale=False,fission_energy_scale=False,
+              time_corr=False,strip_convert=False, \
+              clbr_front_filename='/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_front.txt',\
+              clbr_back_filename='/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_back.txt',\
+              clbr_side_filename='/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_side.txt',\
+              clbr_fission_front_filename='/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_fission.txt',\
+              clbr_fission_back_filename=None,\
+              clbr_fission_side_filename=None):
+     """
+     This's the main function for getting data from experimental binary file. 
+     Options:
+         All following option should be [True/False]:
+         write_file - to output tidy data in csv format, the name of the file would be *filename*.csv (name of the input file to read)
+         energy_scale - use the option to apply alpha-scale calibration coefficients 
+         fission_energy_scale - the same as previous but for fission scale
+         time_corr - to apply a function to correct time of events and make them go sequentially
+         strip_convert - to apply strip convertion to have strip numbers matching real physical strip numbers
 
-     data = np.fromfile(filename, dtype = 'uint16', count = -1, sep = '').reshape(-1,strlength)#[:,0:9]
-     beam_marker = (data[:,0]>>4)% 16
+         All following options are the names of files containing appropriate calibration coefficients:
+         clbr_front_filename
+         clbr_back_filename
+         clbr_side_filename
+         clbr_fission_front_filename
+         clbr_fission_back_filename
+         clbr_fission_side_filename
+     Output: pandas.DataFrame
+     """
+     data = np.fromfile(filename, dtype = 'uint16', count = -1, sep = '').reshape(-1,14)#[:,0:9]     
      
-     #front detectors
      indexes = data[:,0] % 16 
      strips = np.array(data[:,2] / 4096 +1,dtype='uint16')
+     #delete veto events
+     not_veto = ~((indexes == 3)&(strips == 10))
+     data = data[not_veto,]
+     indexes = indexes[not_veto]
+     strips = strips[not_veto]
+     
+     #front detectors
+     beam_marker = (data[:,0]>>4)% 16
      strips = np.where( indexes < 3, indexes*16+strips, strips)
-     channel = data[:,1] % 8192
-     Fchannel = data[:,2]%4096
+     channel = np.array(data[:,1] % 8192,dtype=np.int32)
+     Fchannel = np.array(data[:,2]%4096,dtype=np.int32)
      
      #front strips convert func
      fs_convert = {}
@@ -155,78 +185,114 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
      fs_convert[48]=48
      
      #we actually must apply strip convertion to have strip values matching calibration coefficients
-     if strip_convert or energy_scale:
+     zeros_msv = np.array(np.zeros(len(strips)),dtype = np.int)
+     if strip_convert or energy_scale or fission_energy_scale:
          strips = np.where(indexes<3,pd.Series(strips).map(fs_convert),strips)
-
-     #convert front strips to energy_scale
-     if energy_scale:
-         coefs = get_calibration_coefficients(clbr_front_filename) # 2x47
-         #print 'coefs',coefs
-         #calibration function y = a*x + b
-         f_clbr = lambda st,ch: coefs[0][st-1]*ch + coefs[1][st-1]
-         #print f_clbr(np.array([10,18,46,12]),np.array([673,505,596,601]))
-         strips = np.where( strips<=47,strips,np.zeros(len(strips),dtype=np.int16))
-         channel = np.where( strips&channel,f_clbr(strips,channel),np.zeros(len(strips)) )
+         strips = np.where( strips<=48,strips,zeros_msv)
+         strips = np.where((indexes==3)&(strips>10),strips-10,strips)
          
-     #back strips convert function     
-     def bs_convert1(strip,id_):
          a = pd.read_table('/home/eastwood/codes/Python_Idle/data_processing/StripOrder.txt',sep='\s+',skiprows=53,header=None,nrows=64)
          index = a[0]
          a = pd.Series(a[1])
          a.index = index
-         f = lambda x: a[x]
-         strip = np.where(id_>0,strip+(id_/2)*16,np.zeros(len(id_)) )
-         strip = np.array(f( strip ),dtype=np.int16)
-         return strip  
-
-     def bs_convert2(strip,id_):
-         a = pd.read_table('/home/eastwood/codes/Python_Idle/data_processing/StripOrder.txt',sep='\s+',skiprows=120,header=None,nrows=64)
-         index = a[0]
-         #print ( id_ == 4).sum()
-         a = pd.Series(a[1])
-         a.index = index
-         f = lambda x: a[x]
-         strip = np.where(id_>0,strip+(id_/2-1)*16,np.zeros(len(id_)) )
-         strip = np.array(f( strip ),dtype=np.int16)
+         f_even = lambda x: a[x]
+         
+     #convert front channels to alpha energy_scale
+     if energy_scale and clbr_front_filename:
+         coefs = get_calibration_coefficients(clbr_front_filename) # 2x47
+         #calibration function y = a*x + b
+         f_clbr = lambda st,ch: coefs[0][st-1]*ch + coefs[1][st-1] #alpha-scale calibration function
+         channel = np.where( (indexes<3) * strips * channel,f_clbr(strips,channel),channel )
+     
+     #convert front channels to fission energy_scale
+     if fission_energy_scale and clbr_fission_front_filename:
+         coefs = get_fission_calibration_coefficients(clbr_fission_front_filename)
+         F_clbr = lambda st,ch: coefs[0][st-1]*np.ones(len(ch)) + coefs[1][st-1]*np.exp(-ch/coefs[2][st-1])
+         Fchannel = np.where( (indexes<3)*strips*Fchannel,F_clbr(strips,Fchannel),Fchannel )
+         
+     #convert side channels to alpha energy_scale
+     if energy_scale and clbr_side_filename:
+         coefs = get_calibration_coefficients(clbr_side_filename) # 2x47
+         #calibration function y = a*x + b
+         f_clbr = lambda st,ch: coefs[0][st-1]*ch + coefs[1][st-1] #alpha-scale calibration function
+         #print f_clbr(np.array([10,18,46,12]),np.array([673,505,596,601]))
+         channel = np.where( (indexes==3)*strips*channel,f_clbr(strips,channel),channel )
+         channel = np.where( channel>0, channel, zeros_msv)
+      
+     #convert side channels to fission energy_scale
+     if fission_energy_scale and clbr_fission_side_filename:
+         coefs = get_calibration_coefficients(clbr_fission_side_filename)
+         F_clbr = lambda st,ch: coefs[0][st-1]*ch + coefs[1][st-1]
+         Fchannel = np.where( (indexes==3)*strips*Fchannel,F_clbr(strips,Fchannel),Fchannel )
+     
+     list_even = pd.read_table('/home/eastwood/codes/Python_Idle/data_processing/StripOrder.txt',sep='\s+',skiprows=53,header=None,nrows=64)
+     #print list_even
+     index = list_even[0]
+     list_even = pd.Series(list_even[1])
+     list_even.index = index
+     f_even = lambda x: list_even[x]
+     #back strips convert function     
+     def bs_convert1(strip,id_,f=f_even):
+         if strip_convert or energy_scale:          
+             strip = np.where((id_>0)&(id_<=8),strip+(id_/2)*16,zeros_msv )
+             strip = np.array(f( strip ),dtype=np.int16)
+         else:
+             #print 'yes even'
+             #print 'unique ids',np.unique(id_)
+             strip = np.where((id_>0)&(id_<=8),strip+(id_-1)*16,zeros_msv)
+             #print 'unique',np.unique(strip)
+         return strip 
+         
+     list_odd = pd.read_table('/home/eastwood/codes/Python_Idle/data_processing/StripOrder.txt',sep='\s+',skiprows=120,header=None,nrows=64)
+     #print list_odd
+     index = list_odd[0]
+     #print ( id_ == 4).sum()
+     list_odd = pd.Series(list_odd[1])
+     list_odd.index = index
+     f_odd = lambda x: list_odd[x]
+     def bs_convert2(strip,id_,f=f_odd):    
+         if strip_convert or energy_scale:
+             strip = np.where((id_>0)&(id_<=8),strip+(id_/2-1)*16,zeros_msv )
+             strip = np.array(f( strip ),dtype=np.int16)
+         else:
+             #print 'yes odd'
+             #print 'unique ids',np.unique(id_)
+             strip = np.where((id_>0)&(id_<=8),strip+(id_-1)*16,zeros_msv)
+             #print 'unique',np.unique(strip)
          return strip  
          
      #reading id_s, amplitudes and strip numbers for back detectors
      back_ind1 = (data[:,0]>>8) % 16 
      back_ind2 = (data[:,0]>>12)% 16
-     
      back_strips1 = data[:,8] / 4096 +1
-     if strip_convert or energy_scale:
-         back_strips1 = bs_convert1(back_strips1,back_ind1)
-     
+     back_strips1 = bs_convert1(back_strips1,back_ind1)
      back_strips2 = data[:,10] / 4096 +1 
-     back_strips2 = np.where(back_strips2,back_strips2,0)
-     if strip_convert or energy_scale:
-         back_strips2 = bs_convert2(back_strips2,back_ind2)
-     
+     back_strips2 = bs_convert2(back_strips2,back_ind2)
      back_channel1 = data[:,7] % 8192
      back_channel2 = data[:,9] % 8192
      
-     #convert amplitudes to energies
-     if energy_scale:
-#         f = open('/home/eastwood/codes/Python_Idle/data_processing/clbr_coef_back.txt','r')
-#         lines = f.readlines()
-#         f.close()
-#         coefs = []
-#         strip_list = [] # numbers of strips corresponding with existing coefs
-#         for i in lines[1::11]:
-#             val = i.split()
-#             coefs.append( [float(val[3]),float(val[7])] )
-#             strip_list.append(float(val[0]))
-#         coefs = np.array(coefs).T
-#         #calibration function y = a*x + b
-#         f_clbr = lambda st,ch: coefs[0][st-1]*ch + coefs[1][st-1]
+     Fback_channel1 = np.array(data[:,8] % 4096,dtype = np.int32)
+     Fback_channel2 = np.array(data[:,10] % 4096, dtype = np.int32)     
+     
+     #convert back channel to alpha energy_scale
+     if energy_scale and clbr_back_filename:
          coefs = get_calibration_coefficients(clbr_back_filename)
-         back_strips1 = np.where( back_strips1<=128,back_strips1,np.zeros(len(back_strips1),dtype=np.int16))
-         back_strips2 = np.where( back_strips2<=128,back_strips2,np.zeros(len(back_strips2),dtype=np.int16))
+         back_strips1 = np.where( back_strips1<=128,back_strips1,zeros_msv)
+         back_strips2 = np.where( back_strips2<=128,back_strips2,zeros_msv)
          #print back_strips1.dtype, back_strips2.dtype
-         back_channel1 = np.where( back_channel1,f_clbr(back_strips1,back_channel1),np.zeros(len(back_channel1),dtype=np.int16) )
-         back_channel2 = np.where( back_channel2,f_clbr(back_strips2,back_channel2),np.zeros(len(back_channel1),dtype=np.int16) )
-                                   
+         f_clbr = lambda st,ch: coefs[0][st-1]*ch + coefs[1][st-1]
+         
+         back_channel1 = np.where( back_channel1,f_clbr(back_strips1,back_channel1),back_channel1 )
+         back_channel2 = np.where( back_channel2,f_clbr(back_strips2,back_channel2),back_channel2 )
+    
+     #convert back channel to fission energy_scale
+     if fission_energy_scale and clbr_fission_back_filename:
+         coefs = get_fission_calibration_coefficients(clbr_fission_back_filename) 
+         F_clbr = lambda st,ch: coefs[0][st-1] + coefs[1][st-1]*np.exp(-ch/coefs[2][st-1])
+         Fback_channel1 = np.where( Fback_channel1,F_clbr(back_strips1,Fback_channel1),Fback_channel1 )
+         Fback_channel2 = np.where( Fback_channel2,F_clbr(back_strips2,Fback_channel2),Fback_channel2 )
+     
+                                  
      #time distr
      time = data[:,3]*65536 + data[:,4]
      synchronization_time = data[:,11]
@@ -258,6 +324,7 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
          diapason = 65536**2
          time_dev = np.array(np.r_[ [0],time[1:] - time[:-1] ],dtype='int64')
          time_stamps = (time_dev<0).nonzero()[0] #!!! can be problem of adding too much time to the time of file
+         print time_stamps
          time = time_correct(time_stamps,diapason)
         
      time_dev = np.array(np.r_[ [0],time[1:] - time[:-1] ],dtype='int64')
@@ -271,14 +338,14 @@ def read_file(filename,strlength = 14,write_file=False,energy_scale=False,
      
      #TOF
      tof = data[:,6]%4096#8192
-     
-     frame = pd.DataFrame( {'id': indexes,'strip':strips,'channel':channel,'Fchannel':Fchannel,
+     frame = pd.DataFrame( {'id': indexes,'strip':strips,'channel':channel,'fission_channel':Fchannel,
                   'time_hours':time_hours,'time_min':time_min,'time_sec':time_sec,'time_mks':time_mks,
                   'time_dlt':time_dev,
                   'time': time,
                   'synchronization_time':synchronization_time,
-                  'b_strip 1':back_strips1,'b_strip 2':back_strips2,
-                  'b_channel1':back_channel1,'b_channel2':back_channel2,
+                  'back_strip_even':back_strips1,'back_strip_odd':back_strips2,
+                  'back_channel_EvenStrip':back_channel1,'back_channel_OddStrip':back_channel2,
+                  'back_fission_channel_EvenStrip':Fback_channel1,'back_fission_channel_OddStrip':Fback_channel2,
                   'beam_marker':beam_marker,
                   'tof':tof
                   },
@@ -351,6 +418,7 @@ def visualize_spectrum(hist,sum_spectr):#,window=None):
     ax2 = fig.add_axes([0.125, 0.05, 0.64, 0.25],sharex = ax1)
     x = hist.index
     y = hist.columns
+    y = np.r_[0,y]
     #in case of energy scale i use sum by window to compress spectr and make peaks more distinct
     xgrid, ygrid = np.meshgrid(x,y)
     a = ax1.pcolormesh(xgrid,ygrid,hist.as_matrix().T)
@@ -375,7 +443,7 @@ def window_sum(a,n=4):
     return np.sum(rolling_window(np.array(a),n),axis=1)[::n]    
 
 def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,xsize=8192,window=False,id_mark='<3',type_scale='channel',type_strip='strip',**argv): 
-    """ energy_scale=True,
+    """ 
     Get amplitude spectrs of front detectors from raw data.
         energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
         tof - choose the type of include events by the TOF-mark
@@ -439,7 +507,23 @@ def get_front_spectrs(data,tof=False,threshold=0.04,visualize=True,xsize=8192,wi
             
     return hist,sum_spectr
         
-        
+
+
+def get_fission_spectrs(data,id_mark='<3',xsize=250000,window=500,**argv): 
+    """ 
+    Get amplitude spectrs of front detectors from raw data.
+        energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
+        tof - choose the type of include events by the TOF-mark
+        threshold [0,1) - level of cutting of specturum (comparable with the max-height peak)
+        visualize - show the distribution
+        **argv - arguments to pass to read_files function
+    !note: there're 48 front detectors with strip numbers 1-48; 
+    Output: spectrs( pd.DataFrame [1..48]x[0..8191] , index - contains x-axis data),summary spectr
+    """
+    if id_mark == 'side':
+        id_mark = '==3'
+    return get_front_spectrs(data,id_mark=id_mark,xsize=xsize,window=window,type_scale='fission_channel',**argv)
+     
 #apply some get_... function to get distributions from american format binaries
 def get_am_distribution( data, f = lambda x: get_front_spectrs(x,tof=False,threshold=0.1,visualize=False),visualize=True ):
     Fr_obj = read_am.OpenAmFile(data,chunk_size=1000000)  
@@ -483,16 +567,17 @@ def get_am_side_spectrs( data,tof=False,threshold=0.04,visualize=True,**argv):
 """
 
 
-def get_back_spectrs(data,tof=False,threshold=0.04,visualize=True,**argv):
+def get_back_spectrs(data,tof=False,threshold=0.04,visualize=True,fission_scale=False,**argv):
     """ energy_scale=True,
     Get amplitude spectrs of back detectors from raw data.
         energy_scale - change the size of scale from 8192 to 20000 (it applies no calibrations!)
         tof - choose the type of include events by the TOF-mark
         threshold [0,1) - level of cutting of specturum (comparable with the max-height peak)
         visualize - show the distribution
+        fission_scale - to use fission channels instead of alpha
         **argv - arguments to pass to read_files function
     !note: there're 128 back detectors, which separated to odd and even numbers (signals are splitted to different electric chains); 
-    Output: spectrs( 2Darray [0..47]x[0..8191] ),summary spectr
+    Output: spectrs( pd.DataFrame [1..48]x[0..8191] , index - contains x-axis data),summary spectr
     """
     #read data 
     sample = read_files(data,**argv)
@@ -502,53 +587,92 @@ def get_back_spectrs(data,tof=False,threshold=0.04,visualize=True,**argv):
         sample = sample[ sample['tof']>0 ]
     else:
         sample = sample[ sample['tof']==0]
-    spectr1 = sample['b_channel1'].groupby(sample['b_strip 1']) #odd numbers of strips
-    spectr2 = sample['b_channel2'].groupby(sample['b_strip 2']) #even numbers of strips
+    
+    if fission_scale:
+        channel_even = 'back_fission_channel_EvenStrip'
+        channel_odd = 'back_fission_channel_OddStrip'
+    else:
+        channel_even = 'back_channel_EvenStrip'
+        channel_odd = 'back_channel_OddStrip'
+    spectr1 = sample[channel_even].groupby(sample['back_strip_even']) #odd numbers of strips
+    spectr2 = sample[channel_odd].groupby(sample['back_strip_odd']) #even numbers of strips
     del sample
     if len(spectr1) and len(spectr2) == 0:
         raise ValueError('No such events or empty file')
     
     #choose scale
-    xsize = np.arange(8192)
+    xsample = np.arange(8192)
     energy_scale = False
     if 'energy_scale' in argv:
         if argv['energy_scale']:
             energy_scale = True
-            xsize = np.arange(20000)
             window = 8
-            xsize = xsize[::window ]
+            xsize = 20000					
+            xsample=np.arange(1,xsize,window)
+    if fission_scale:
+        xsample = np.arange(1,100000,100)
+#    if 'energy_scale' in argv:
+#        if argv['energy_scale']:
+#            energy_scale = True
+#            xsize = np.arange(20000)
+#            window = 8
+#            xsize = xsize[::window ]
             
     #collect histograms
     list_hist = []
-    names = []
-    for (name1,group1) in spectr2:
-        #collecting histograms from odd strips
-        if float(name1) % 2 == 1:
-            names.append(name1)
-            #if 'energy_scale' in argv: #sum by window to compress spectrums
-            #    if argv['energy_scale']:
-            #        group1 = window_sum(group1,window )
-            list_hist.append( np.histogram(group1,bins = xsize)[0][1:] )
-            
-    for (name2,group2) in spectr1:
-        if (float(name2) % 2 == 0)&(float(name2)!=0):
-            names.append(name2)
-            #if 'energy_scale' in argv:
-            #    if argv['energy_scale']:
-            #        group2 = window_sum(group2,window )
-            list_hist.append( np.histogram(group2,bins = xsize)[0][1:] )
-    hist = np.vstack( (list_hist[0],list_hist[1]))
-    for i in xrange(2,len(list_hist)):
-        hist = np.vstack( (hist,list_hist[i]))  
-    ysize = hist.shape[0]
+#    names = []
+#    for (name1,group1) in spectr2:
+#        #collecting histograms from odd strips
+#        if float(name1) % 2 == 1:
+#            names.append(name1)
+#            #if 'energy_scale' in argv: #sum by window to compress spectrums
+#            #    if argv['energy_scale']:
+#            #        group1 = window_sum(group1,window )
+#            list_hist.append( np.histogram(group1,bins = xsample)[0][1:] )
+#            
+#    for (name2,group2) in spectr1:
+#        if (float(name2) % 2 == 0)&(float(name2)!=0):
+#            names.append(name2)
+#            #if 'energy_scale' in argv:
+#            #    if argv['energy_scale']:
+#            #        group2 = window_sum(group2,window )
+#            list_hist.append( np.histogram(group2,bins = xsample)[0][1:] )
+#    hist = np.vstack( (list_hist[0],list_hist[1]))
+#    for i in xrange(2,len(list_hist)):
+#        hist = np.vstack( (hist,list_hist[i]))  
+#    ysize = hist.shape[0]
+    names = set(spectr1.groups.keys()).union(spectr2.groups.keys())
+    if len(names) == 0:
+        raise Exception('Empty strip"s set')
     
+    new_names = []    
+    for name in names:
+        if float(name) <= 0 or float(name) >128:
+            continue
+        elif (name in spectr1.groups.keys()) and (name in spectr2.groups.keys()):
+            list_hist.append( np.histogram(spectr1.get_group(name),bins = xsample)[0][1:] + np.histogram(spectr2.get_group(name),bins = xsample)[0][1:] )
+            new_names.append(name)
+        elif (name in spectr1.groups.keys()):
+            list_hist.append( np.histogram(spectr1.get_group(name),bins = xsample)[0][1:]) 
+            new_names.append(name)
+        elif (name in spectr2.groups.keys()):
+            list_hist.append( np.histogram(spectr2.get_group(name),bins = xsample)[0][1:]) 
+            new_names.append(name)
+    
+    names = new_names
+    hist = np.zeros((len(names),len(list_hist[0])))
+    for i in xrange(len(names)):
+        hist[i] = np.array(list_hist[i])
     #calculate the sum of spectrums
     sum_spectr = list_hist[0]
     for i in xrange(1,len(list_hist)):
-        sum_spectr += list_hist[i]     
+        sum_spectr += list_hist[i]   
+        
+    hist[ hist > hist.max()*threshold ] = hist.max()*threshold
     hist = pd.DataFrame(hist.T,columns=names)
+    hist.index = xsample[1:-1]
     hist = hist.sort_index(axis=1)
-    hist[ hist > max(hist.max())*threshold ] = max(hist.max())*threshold
+    #hist[ hist > max(hist.max())*threshold ] = max(hist.max())*threshold
     
     #visualisation
     if visualize:
@@ -573,14 +697,14 @@ def get_am_back_spectrs(data,tof=False,threshold=0.04,visualize=True,**argv):
     #read data 
     sample = read_files(data,**argv)
     sample = sample[sample['id']==4]
-    print sample
+    #print sample
     #tof 
     if tof:
         sample = sample[ sample['tof']>0 ]
     else:
         sample = sample[ sample['tof']==0]
-    spectr1 = sample['channel'].groupby(sample['b_strip 1']) #odd numbers of strips
-    #spectr2 = sample['channel'].groupby(sample['b_strip 2']) #even numbers of strips
+    spectr1 = sample['channel'].groupby(sample['back_strip_even']) #odd numbers of strips
+    #spectr2 = sample['channel'].groupby(sample['back_strip_odd']) #even numbers of strips
     del sample
     if len(spectr1) == 0:
         raise ValueError('No such events or empty file')
@@ -608,7 +732,7 @@ def get_am_back_spectrs(data,tof=False,threshold=0.04,visualize=True,**argv):
 #            list_hist.append( np.histogram(group1,bins = xsize)[0][1:] )
             
     for (name,group) in spectr1:
-        print name,group
+        #print name,group
         #if (float(name2) % 2 == 0)&(float(name2)!=0):
         names.append(name)
         list_hist.append( np.histogram(group,bins = xsize)[0][1:] )
@@ -645,20 +769,42 @@ def get_focal_side_indexes(frame,strip):
 	#find synchronized pairs side-focal
 	set_front2 = msv_dt & (frame['id']<3) 
 	set_front2 &= np.roll(frame['id']==3,1)
-	set_side2 = np.roll(set_front2,-1)
+	set_side2 = np.roll(set_front2,-1) & (frame['strip'] == strip) 
 	return set_side1,set_front1, set_side2,set_front2
 				
 
-def get_side_calibration_spectrs(frame,side_coefs = get_calibration_coefficients('clbr_coef_side.txt'),front_coefs = get_calibration_coefficients('clbr_coef_front.txt'),step=10,strip = 0):
+def get_side_calibration_spectrs(frame,side_coefs = get_calibration_coefficients('clbr_coef_side.txt'),front_coefs = get_calibration_coefficients('clbr_coef_front.txt'),fission_scale=False,step=10,strip = 1):
+    """
+    Get focal-side alph-scale spectr for performing calibration of side detectors.
+    Input:
+        frame - initial dataset in pd.DataFrame format
+        side_coefs,front_coefs - initial coefficients for making a figure
+        step - width of bins in resulting figure, it is to make peaks more narrow
+        strip - number of side strip for making a spectrs from it
+        
+    Output: xsample (numpy.ndarray,x-scale for figures),channel_spectrs (numpy.ndarray),energy_spectrs (numpy.ndarray)
+    """
     energy_spectrs = []
     channel_spectrs = []
      
     #find pairs of front-side and side-front events
-    set_side1,set_front1,set_side2,set_front2 = get_focal_side_indexes(frame,strip+11)
+    #print strip+11
+    set_side1,set_front1,set_side2,set_front2 = get_focal_side_indexes(frame,strip) # strip+11
+    #print sum(set_side1),sum(set_side2)
      
-    	# read side calibration coefficients
+    # read side calibration coefficients
     ff_clbr = lambda st,ch: front_coefs[0][st-1]*ch + front_coefs[1][st-1]
-    fs_clbr = lambda st,ch: side_coefs[0][st]*ch + side_coefs[1][st]
+    fs_clbr = lambda st,ch: side_coefs[0][st-1]*ch + side_coefs[1][st-1]
+    if fission_scale:
+        ff_clbr = lambda st,ch: front_coefs[0][st-1] + front_coefs[1][st-1]*np.exp(-ch/front_coefs[2][st-1])
+        #fs_clbr = lambda st,ch: side_coefs[0][st-1] + side_coefs[1][st-1]*np.exp(-ch/side_coefs[2][st-1])
+        channel = 'fission_channel'
+        energy_msv_size = 250000
+        step_en = 200
+    else:
+        channel = 'channel'
+        energy_msv_size = 20000
+        step_en = step
 #    def fs_clbr(st,ch):
 #        print st-1, len(side_coefs[0])
 #        return side_coefs[0][st-1]*ch + side_coefs[st-1]
@@ -667,35 +813,40 @@ def get_side_calibration_spectrs(frame,side_coefs = get_calibration_coefficients
     grouped = frame[set_side1].groupby('strip')
     for i, subset in grouped:
         side_strip = int(i)
-        if (side_strip>10) & (side_strip<17):
-            #convert amplitudes of side detectors to energy scale	
-            side_strip -= 11  
-            side_energies = fs_clbr(side_strip, subset['channel'])    
-            indexes = np.array(subset.index) - 1 #indexes of focal events     
-            strips = np.array(frame.ix[indexes]['strip'],dtype=np.int16)
-            channels = np.array(frame.ix[indexes]['channel'])
-            energies = ff_clbr(strips,channels)+side_energies		     
-            new_channels = (np.array(energies) - side_coefs[1][side_strip])/side_coefs[0][side_strip]    
-            energy_spectrs.append(np.histogram(energies, bins = np.arange(1,20000,step)) )
-            channel_spectrs.append(np.histogram(new_channels, bins = np.arange(1,20000,step)) )	
+#        if (side_strip>10) & (side_strip<17):
+#            #convert amplitudes of side detectors to energy scale	
+#            side_strip -= 11  
+        side_energies = fs_clbr(side_strip, subset[channel])    
+        indexes = np.array(subset.index) - 1 #indexes of focal events     
+        strips = np.array(frame.ix[indexes]['strip'],dtype=np.int16)
+        channels = np.array(frame.ix[indexes][channel])
+        energies = ff_clbr(strips,channels)+side_energies
+        #print 'energies: ',ff_clbr(strips,channels),side_energies
+        new_channels = (np.array(energies) - side_coefs[1][side_strip-1])/side_coefs[0][side_strip-1]    
+        energy_spectrs.append(np.histogram(energies, bins = np.arange(1,energy_msv_size,step_en)) )
+        #print '1 sum of energy msv nonzero items: ',max(side_energies),max(energies)
+        channel_spectrs.append(np.histogram(new_channels, bins = np.arange(1,20000,step)) )	
             
     grouped = frame[set_side2].groupby('strip')
     for i, subset in grouped:
         side_strip = int(i)
-        if (side_strip>10) & (side_strip<17):
-            #convert amplitudes of side detectors to energy scale	
-            side_strip -= 11
-            side_energies = fs_clbr(side_strip, subset['channel'])
-            indexes = np.array(subset.index) + 1 #indexes of focal events 
-            strips = np.array(frame.ix[indexes]['strip'],dtype=np.int16)
-            channels = np.array(frame.ix[indexes]['channel'])
-            energies = ff_clbr(strips,channels)+side_energies
-            new_channels = (np.array(energies) - side_coefs[1][side_strip])/side_coefs[0][side_strip]
-            energy_spectrs.append(np.histogram( energies, bins = np.arange(1,20000,step)) )
-            channel_spectrs.append(np.histogram( new_channels, bins = np.arange(1,20000,step)) )
-            
+#        if (side_strip>10) & (side_strip<17):
+#            #convert amplitudes of side detectors to energy scale	
+#            side_strip -= 11
+        side_energies = fs_clbr(side_strip, subset[channel])
+        indexes = np.array(subset.index) + 1 #indexes of focal events 
+        strips = np.array(frame.ix[indexes]['strip'],dtype=np.int16)
+        channels = np.array(frame.ix[indexes][channel])
+        energies = ff_clbr(strips,channels)+side_energies
+        #print 'energies: ',ff_clbr(strips,channels),side_energies
+        new_channels = (np.array(energies) - side_coefs[1][side_strip-1])/side_coefs[0][side_strip-1]
+        energy_spectrs.append(np.histogram( energies, bins = np.arange(1,energy_msv_size,step_en)) )
+        #print '2 sum of energy msv items: ',max(side_energies),max(energies)
+        channel_spectrs.append(np.histogram( new_channels, bins = np.arange(1,20000,step)) )
+        
     #summarize histograms of f-s and s-f events by strips
     xsample = channel_spectrs[0][1][1:]
+    xsample_en = energy_spectrs[0][1][1:]
 #    ch_spectrs = []
 #    en_spectrs = []
 #    for i in xrange(6):
@@ -705,6 +856,8 @@ def get_side_calibration_spectrs(frame,side_coefs = get_calibration_coefficients
 #        del energy_spectrs[0]
     channel_spectrs = np.array(channel_spectrs[0][0]) + np.array(channel_spectrs[1][0])
     energy_spectrs = np.array(energy_spectrs[0][0]) + np.array(energy_spectrs[1][0])
+    if fission_scale:
+        return xsample,channel_spectrs,xsample_en,energy_spectrs
     return xsample,channel_spectrs,energy_spectrs#ch_spectrs,en_spectrs     
 
 		
@@ -719,7 +872,7 @@ def get_front_fission_spectrs(data,energy_scale=True,tof=False,threshold=0.04,vi
         **argv - arguments to pass to read_files function
     Output: spectrs( 2Darray [0..47]x[0..8191] ),summary spectr
     """
-    return get_front_spectrs(data,energy_scale,tof,threshold,visualize,id_mark='<3',type_scale='Fchannel',**argv)  
+    return get_front_spectrs(data,energy_scale,tof,threshold,visualize,id_mark='<3',type_scale='fission_channel',**argv)  
 
 def pos_distr(data,tof=False,**argv):
     sample = read_files(data, **argv )
@@ -730,8 +883,8 @@ def pos_distr(data,tof=False,**argv):
         mask = (sample['tof']==0)
         
     hist_f = np.histogram(sample['strip'][mask],bins = np.arange(1,49))
-    hist_b1 = np.histogram(sample['b_strip 1'][mask],bins = np.arange(0,129))
-    hist_b2 = np.histogram(sample['b_strip 2'][mask],bins = np.arange(0,129))
+    hist_b1 = np.histogram(sample['back_strip_even'][mask],bins = np.arange(0,129))
+    hist_b2 = np.histogram(sample['back_strip_odd'][mask],bins = np.arange(0,129))
     
     fig, ax = plt.subplots(2,2)
     ax[0,0].plot(hist_f[0],linestyle='steps')
@@ -744,7 +897,7 @@ def pos_distr(data,tof=False,**argv):
    
 def pos_distr2d(data):
     sample = read_files(data)
-    back_stripes = pd.Series(np.where(sample['b_channel1'] > sample['b_channel2'],sample['b_strip 1'],sample['b_strip 2']))
+    back_stripes = pd.Series(np.where(sample['back_channel_EvenStrip'] > sample['back_channel_OddStrip'],sample['back_strip_even'],sample['back_strip_odd']))
     spectr = np.array( pd.crosstab(sample['strip'],back_stripes)  )
     spectr = spectr[:,1:]
     
@@ -770,18 +923,98 @@ def outputf(data,name):
     data.to_csv('chain'+str(name))
     
 
-def find_chaines(data,dt):
-    frame = read_files(data)
-    frame = frame[ 
-        (frame['beam_marker']==0) &
-        (frame['tof']==0) ]    
-    pos_distr = frame.groupby( 
-        [frame['strip'], frame['b_strip 1']] )   
-    for name, group in pos_distr:
-        time_group = group['time'].diff()
-        group = group[ time_group < dt ]
-        outputf(group,name)
+#def find_chaines(data,dt):
+#    frame = read_files(data)
+#    frame = frame[ 
+#        (frame['beam_marker']==0) &
+#        (frame['tof']==0) ]    
+#    pos_distr = frame.groupby( 
+#        [frame['strip'], frame['back_strip_even']] )   
+#    for name, group in pos_distr:
+#        time_group = group['time'].diff()
+#        group = group[ time_group < dt ]
+#        outputf(group,name)
         
+        
+def get_total_energy(frame,scale = 'alpha'):
+    """
+    Функция суммирует энергии парных событий типа focal-side и записывает эту общую энергию в фокальное событие,
+    содержащее координаты - номера фронтального и заднего стрипов.
+    Output: frame (pd.DataFrame)
+    """
+    if scale == 'alpha':
+        channel = 'channel'
+        total_energy = 'total_energy_A'
+    elif scale == 'fission':
+        channel = 'fission_channel'
+        total_energy = 'total_energy_F'
+    frame[total_energy] = frame[channel]
+    for i in np.unique(frame['strip']):
+        set_side1,set_front1, set_side2,set_front2 = get_focal_side_indexes(frame,i)
+        frame.ix[set_front1][total_energy] = frame.ix[set_front1][channel] + frame.ix[set_side1][channel]
+        frame.ix[set_front1][total_energy] = frame.ix[set_front1][channel] + frame.ix[set_side1][channel]
+    
+    return frame
+
+
+def find_chaines(frame,time_dlt=25,tof_mark=False,energy_level_min=8000,energy_level_max=12000,chain_length=11,output = 'chains.txt'):
+    """
+    The function searches chains of alpha decays with given parameters.
+    Input:
+        frame - pd.DataFrame as a result of read_file(s) function
+        time_dlt - time window to select events consequence into a chain
+        energy_level_min,energy_level_max - interval of alpha-energies to find
+        chain_length - maximum of chain's length
+    Output:
+        output.txt - file with a report 
+    """
+    report = ''
+    for name,group in frame.groupby(['strip','back_strip_even']):
+        chains = find_chaines_in_mesh(group,time_dlt=time_dlt,tof_mark=tof_mark,energy_level_min=energy_level_min,energy_level_max=energy_level_max,chain_length=chain_length)
+        if len(chains):
+            report += '\n\n\n'+name
+            for chain in chains:
+                report += '\n' + chain.to_string()
+                
+    for name,group in frame.groupby(['strip','back_strip_odd']):
+        chains = find_chaines_in_mesh(group,time_dlt=time_dlt,tof_mark=tof_mark,energy_level_min=energy_level_min,energy_level_max=energy_level_max,chain_length=chain_length)
+        if len(chains):
+            report += '\n\n\n'+name
+            for chain in chains:
+                report += '\n' + chain.to_string()
+    if output:            
+        f = open(output,'w')
+        f.write(report)
+        f.close()
+    else:
+        return report
+                
+            
+def find_chaines_in_mesh(frame,time_dlt=25,tof_mark=False,energy_level_min=8000,energy_level_max=12000,chain_length=11):
+    resume = (frame['synchronization_time'].diff().abs() <time_dlt) & (frame['total_energy_A']>energy_level_min)& (frame['total_energy_A']<energy_level_max) & (frame['tof']== tof_mark)
+    event_num,i = 0,0
+    chains = []
+    chain = np.zeros(chain_length)
+    
+    size = len(resume)
+    for event_num in range(1,size):
+        if resume[event_num] == True:
+            if i == 0:
+                chain[i] = event_num-1
+                i += 1
+            chain[i] = event_num
+            i += 1
+            if i == chain_length - 1:
+                chains.append(frame[chain[:i+1]])
+                chain[:i+1] = 0
+                i = 0     
+        else:
+            if i > 0:
+                chains.append(frame[chain[:i+1]])
+                chain[:i+1] = 0
+                i = 0
+    return chains
+                
     
 def read_times(filename):
      data = np.fromfile(filename, dtype = 'uint16', count = -1, sep = '').reshape(-1,12)[:,0:5]
@@ -863,17 +1096,49 @@ def diff_time_distr(filename,xmax=100):
     plt.plot(bins[1:],hist,linestyle='steps',linewidth=3,color='b')
     plt.title('Time differences in interval 0-%d mkseconds' % xmax)
     plt.show()    
-				
-				
+
+# distibution of average counts per second
+#file = [...some filenames]
+#k = [234.,235325.,...]	
+def count_rate_front(files,times,filename):
+    f = open(filename,'a')	
+    for file_,coef in zip(files,times):
+        frame = read_file(file_,strip_convert=True)
+        frame = frame[frame['id']<3]
+        a = frame.groupby('strip').count()['time']
+        frame1 = pd.DataFrame({'Counts':a,'Average counts per second':a/coef})
+        f.write('\n'+file_+'\n'+frame1.to_string())
+        f.write('\n%24s%s%4s%s\n' %(' ',str(len(frame)/coef),' ',str(len(frame))))
+        
+    f.close()
+    
+def count_rate_back(files,times,filename):
+    f = open(filename,'a')	
+    for file_,coef in zip(files,times):
+        frame = read_file(file_,strip_convert=True)
+        frame = frame[frame['id']<3]
+        a = frame.groupby('back_strip_odd').count()['time']
+        frame1 = pd.DataFrame({'Counts':a,'Average counts per second':a/coef})
+        f.write('\n'+file_+'\n'+frame1.to_string())
+        a = frame.groupby('back_strip_even').count()['time']
+        frame1 = pd.DataFrame({'Counts':a,'Average counts per second':a/coef})
+        f.write('\n'+frame1.to_string())
+        f.write('\n%24s%s%4s%s\n' %(' ',str(len(frame)/coef),' ',str(len(frame))))
+        
+    f.close()
+    
+			
 		
 
     
 if __name__ == '__main__':
     print 'is run'
     import os
-    os.chdir(r'./Files88_91')
-    frame = read_files('tsn.88-tsn.91',strip_convert=True)
-    hist,hsum  = get_front_spectrs(frame,tof=False,type_scale='Fchannel')
-    hist1,hsum1 = get_front_spectrs(frame,tof=True,type_scale='Fchannel')
-    
+#    os.chdir(r'./Files88_91')
+#    frame = read_files('tsn.88-tsn.91',strip_convert=True)
+#    os.chdir(r'./exp_data1')
+#    frame = read_files('tsn.35-tsn.48',strip_convert=True)
+#    hist,hsum  = get_front_spectrs(frame,tof=False,type_scale='fission_channel')
+#    hist1,hsum1 = get_front_spectrs(frame,tof=True,type_scale='fission_channel')
+#    
 #    fig,ax = plt.subplots(2,1)

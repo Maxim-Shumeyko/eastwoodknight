@@ -304,7 +304,7 @@ if __name__ == '__main__':
     calibration_properties = record()
     calibration_properties.visualize= True
     calibration_properties.weighted_average_sigma = 5
-    calibration_properties.dlt = 10 # параметр для определения области соответствия расчетного положения пиков (соотв. пропорции калибровочных энергий) и реальных найденных пиков (метод spectrum_tools.search_peaks), если реальные пики не находятся вблизи расчетных 
+    calibration_properties.dlt = 12 # параметр для определения области соответствия расчетного положения пиков (соотв. пропорции калибровочных энергий) и реальных найденных пиков (метод spectrum_tools.search_peaks), если реальные пики не находятся вблизи расчетных 
                                     # в области dlt, то они заменяются на расчетные, в противном случае выбирается пик наиболее близкий к расчетному. see calibration.calibrate_area
     calibration_properties.energies = [6040,6143,6264,6899.2,7137,7922,8699,9261]#[7137,7922,8699,9261]#[6040,6143,6264,8699,9261]# 
 
@@ -321,8 +321,8 @@ if __name__ == '__main__':
     filter_properties.background_options='BACK1_ORDER8,BACK1_INCLUDE_COMPTON' 
     filter_properties.threshold= 3
     
-    #choose strips and calibrate them
-    start,stop = 65,128
-    #output_filename = '/home/eastwood/codes/Python_Idle/data_processing/Sep2014_calibrations/alpha_back_clbr.txt'
-    output_filename = None
-    xpeaks, coefs = calibrate_spectr(start,stop,xmin,xmax,hist,calibration_properties,filter_properties,search_properties,output_filename = output_filename)
+#    #choose strips and calibrate them
+#    start,stop = 65,128
+#    #output_filename = '/home/eastwood/codes/Python_Idle/data_processing/Sep2014_calibrations/alpha_back_clbr.txt'
+#    output_filename = None
+#    xpeaks, coefs = calibrate_spectr(start,stop,xmin,xmax,hist,calibration_properties,filter_properties,search_properties,output_filename = output_filename)

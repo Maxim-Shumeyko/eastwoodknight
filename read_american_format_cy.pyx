@@ -9,11 +9,11 @@ import numpy as np
 from pandas import DataFrame as DF, Series as Series
 from time import time as show_time
 import datetime
+from dateutil.parser import parse
 import os
 
 
-
-def open_am_file(size,fileobj,chunk_size=10000):
+def open_am_file(size,fileobj,chunk_size=10000,time_start=False,time_stop=False):
     """
     Read events from binary file.
     Each event includes
@@ -21,7 +21,7 @@ def open_am_file(size,fileobj,chunk_size=10000):
         	strip: (1,48)-front, (1,6)-side 
         	channel - amplitudes
         	time 
-        	b_strip 1 - strip number for back detectors (1,128)-back
+        	back_strip_even - strip number for back detectors (1,128)-back
         	beam_marker
         	tof
         	veto
@@ -70,11 +70,30 @@ def open_am_file(size,fileobj,chunk_size=10000):
     list_veto = []
     
     #adding data to DataFrame 
-    cdef int pos, chan     
+    cdef int pos, chan 
+    cdef int count_time_measure = 100   
+    continue_flag = False
     
     while offset < size:
+        
         time,time_sync,time_inner,beam_on,count_tof_camers,count_events = read_block(offset,fileobj)
         offset += 32 
+        
+#        if time_start or time_stop:
+        if count_time_measure == 100:
+            if time_start:
+                if time < time_start:
+                    continue_flag = True
+                else:
+                    continue_flag = False
+            if time_stop:
+                 if time>time_stop:
+                    continue_flag = True
+                 else:
+                    continue_flag = False
+                    
+
+        
         try:
             amplitudes,positions = read_events(offset,count_events,fileobj)
         except ValueError:
@@ -82,6 +101,13 @@ def open_am_file(size,fileobj,chunk_size=10000):
             print 'There is no data about events at the end of the file'
         offset +=count_events*8
         num_blocks += 1
+        
+        count_time_measure -= 1
+        if count_time_measure == 0:
+            count_time_measure = 100
+        if continue_flag:
+            continue
+        
         #print offset,size
         #glue lists of events
         tof = False
@@ -119,7 +145,7 @@ def open_am_file(size,fileobj,chunk_size=10000):
 		   
             frame = DF( {'id': list_id,'strip':list_strips,'channel':list_channels,
                       'time': list_time,
-                      'b_strip 1':list_back_strips,
+                      'back_strip_even':list_back_strips,
                       'beam_marker':list_beam,
                       'tof':list_tof,
                       'veto':list_veto
@@ -138,7 +164,7 @@ def open_am_file(size,fileobj,chunk_size=10000):
     if len(list_id)>0 :
         frame = DF( {'id': list_id,'strip':list_strips,'channel':list_channels,
                   'time': list_time,
-                  'b_strip 1':list_back_strips,
+                  'back_strip_even':list_back_strips,
                   'beam_marker':list_beam,
                   'tof':list_tof,
                   'veto':list_veto
@@ -163,7 +189,7 @@ def open_am_file(size,fileobj,chunk_size=10000):
                 if len(list_id)>0:
                     frame = DF( {'id': list_id,'strip':list_strips,'channel':list_channels,
                               'time': list_time,
-                              'b_strip 1':list_back_strips,
+                              'back_strip_even':list_back_strips,
                               'beam_marker':list_beam,
                               'tof':list_tof,
                               'veto':list_veto
@@ -199,8 +225,15 @@ class OpenAmFile:
         else:
             print 'Error while openning. Please, check up the data file.'
                
-    def get_frames(self):
-        return open_am_file(self.size,self.fileobj,chunk_size=self.chunk_size)
+    def get_frames(self,time_start=False,time_stop=False):
+        #print time_stop
+        if time_start:
+            time_start = (parse(time_start) - datetime.datetime(1970,1,1)).total_seconds() - 10800
+        if time_stop:
+            time_stop = (parse(time_stop) - datetime.datetime(1970,1,1)).total_seconds() - 10800
+        #print time_stop
+        #print 'time_stop ', datetime.datetime.utcfromtimestamp(time_stop), datetime.datetime.fromtimestamp(time_stop)
+        return open_am_file(self.size,self.fileobj,chunk_size=self.chunk_size,time_start=time_start,time_stop=time_stop)
         
     def apply_func(self,func):
         frames = self.get_frames()

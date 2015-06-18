@@ -64,7 +64,7 @@ def smooth(x,window_len=11,window='hanning'):
                flat window will produce a moving average smoothing.
    
       output:
-           the smoothed signal
+           1D np.array - the smoothed signal
            
       example:
    
