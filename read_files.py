@@ -35,7 +35,7 @@ FUNCTIONS:
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt 
-from mayavi import mlab
+#from mayavi import mlab
 from matplotlib import cm
 import read_american_format_cy as read_am
 import os
@@ -128,7 +128,7 @@ def read_file(filename,write_file=False,energy_scale=False,fission_energy_scale=
      strips = strips[not_veto]
      
      #front detectors
-     beam_marker = (data[:,0]>>4)% 16
+     beam_mark = (data[:,0]>>4)% 16
      strips = np.where( indexes < 3, indexes*16+strips, strips)
      channel = np.array(data[:,1] % 8192,dtype=np.int32)
      Fchannel = np.array(data[:,2]%4096,dtype=np.int32)
@@ -346,11 +346,13 @@ def read_file(filename,write_file=False,energy_scale=False,fission_energy_scale=
                   'back_strip_even':back_strips1,'back_strip_odd':back_strips2,
                   'back_channel_EvenStrip':back_channel1,'back_channel_OddStrip':back_channel2,
                   'back_fission_channel_EvenStrip':Fback_channel1,'back_fission_channel_OddStrip':Fback_channel2,
-                  'beam_marker':beam_marker,
+                  'beam_mark':beam_mark,
                   'tof':tof
                   },
                  index = np.arange(data.shape[0]) )
      
+     frame = frame[frame['channel']>0]
+     frame.index = np.arange(frame.shape[0])
      if write_file:           
          frame.to_csv(filename.split('.')[1]+'.csv')
          
@@ -677,7 +679,7 @@ def get_back_spectrs(data,tof=False,threshold=0.04,visualize=True,fission_scale=
     #visualisation
     if visualize:
         if energy_scale:
-            visualize_spectrum(hist,sum_spectr,window=window)
+            visualize_spectrum(hist,sum_spectr)#,window=window)
         else:
             visualize_spectrum(hist,sum_spectr)
     return hist,sum_spectr
@@ -762,14 +764,14 @@ def get_am_back_spectrs(data,tof=False,threshold=0.04,visualize=True,**argv):
 def get_focal_side_indexes(frame,strip):      
 	msv_dt = frame['synchronization_time'].diff().abs() < 20  
 	#find synchronized pairs focale-side
-	set_side1 = msv_dt  & (frame['id']==3) & (frame['strip'] == strip)
+	set_side1 = (msv_dt  & (frame['id']==3) & (frame['strip'] == strip)).as_matrix()
 	set_side1 &= np.roll(frame['id']<3,1)  
 	set_front1 = np.roll(set_side1,-1)   
    
 	#find synchronized pairs side-focal
-	set_front2 = msv_dt & (frame['id']<3) 
-	set_front2 &= np.roll(frame['id']==3,1)
-	set_side2 = np.roll(set_front2,-1) & (frame['strip'] == strip) 
+	set_front2 = (msv_dt & (frame['id']<3) ).as_matrix()
+	set_front2 &= np.roll(frame['id']==3,1) & np.roll(frame['strip'] == strip,1)
+	set_side2 = np.roll(set_front2,-1)  
 	return set_side1,set_front1, set_side2,set_front2
 				
 
@@ -926,7 +928,7 @@ def outputf(data,name):
 #def find_chaines(data,dt):
 #    frame = read_files(data)
 #    frame = frame[ 
-#        (frame['beam_marker']==0) &
+#        (frame['beam_mark']==0) &
 #        (frame['tof']==0) ]    
 #    pos_distr = frame.groupby( 
 #        [frame['strip'], frame['back_strip_even']] )   
@@ -948,16 +950,34 @@ def get_total_energy(frame,scale = 'alpha'):
     elif scale == 'fission':
         channel = 'fission_channel'
         total_energy = 'total_energy_F'
-    frame[total_energy] = frame[channel]
-    for i in np.unique(frame['strip']):
-        set_side1,set_front1, set_side2,set_front2 = get_focal_side_indexes(frame,i)
-        frame.ix[set_front1][total_energy] = frame.ix[set_front1][channel] + frame.ix[set_side1][channel]
-        frame.ix[set_front1][total_energy] = frame.ix[set_front1][channel] + frame.ix[set_side1][channel]
+    set_energies = np.array(frame[channel])
+    for i in np.arange(1,2): #complimented by the numbers of side detectors 
+    
+        set_side1,set_front1, set_side2,set_front2 = get_focal_side_indexes(frame,i) # i - number of a side detector
+        index0 = np.nonzero(set_front1)[0]
+        set0 = set_energies[set_front1] + set_energies[set_side1]
+        set_energies[index0] = set0
+        
+        index1 = np.nonzero(set_front2)[0]
+        set1 = set_energies[set_front2] + set_energies[set_side2]
+        set_energies[index1] = set1
+        
+    frame[total_energy] = pd.Series(set_energies)
+         
+#        index0 = frame.ix[set_front1].index
+#        set0 = pd.Series(frame.ix[set_front1][channel].as_matrix() + frame.ix[set_side1][channel].as_matrix(),index=index0)
+#        index1 = frame.ix[set_front2].index
+#        set1 = pd.Series(frame.ix[set_front2][channel].as_matrix() + frame.ix[set_side2][channel].as_matrix(),index=index1)
+
+#        frame[total_energy] = np.where()
+#        frame[total_energy] = set1
+        #frame.ix[set_front1][total_energy] = frame.ix[set_front1][channel] + frame.ix[set_side1][channel]
+        #frame.ix[set_front1][total_energy] = frame.ix[set_front1][channel] + frame.ix[set_side1][channel]
     
     return frame
 
 
-def find_chaines(frame,time_dlt=25,tof_mark=False,energy_level_min=8000,energy_level_max=12000,chain_length=11,output = 'chains.txt'):
+def find_chaines(frame,time_dlt=25,tof_mark=False,energy_level_min=8000,energy_level_max=12000,output = 'chains.txt',tof_condition=True):
     """
     The function searches chains of alpha decays with given parameters.
     Input:
@@ -968,18 +988,20 @@ def find_chaines(frame,time_dlt=25,tof_mark=False,energy_level_min=8000,energy_l
     Output:
         output.txt - file with a report 
     """
+    frame = get_total_energy(frame)
+    frame = frame[frame['id']!=3]
     report = ''
     for name,group in frame.groupby(['strip','back_strip_even']):
-        chains = find_chaines_in_mesh(group,time_dlt=time_dlt,tof_mark=tof_mark,energy_level_min=energy_level_min,energy_level_max=energy_level_max,chain_length=chain_length)
+        chains = find_chaines_in_mesh(group,time_dlt=time_dlt,tof_mark=tof_mark,energy_level_min=energy_level_min,energy_level_max=energy_level_max,tof_condition=tof_condition)
         if len(chains):
-            report += '\n\n\n'+name
+            report += '\n\n\n'+str(name)
             for chain in chains:
                 report += '\n' + chain.to_string()
                 
     for name,group in frame.groupby(['strip','back_strip_odd']):
-        chains = find_chaines_in_mesh(group,time_dlt=time_dlt,tof_mark=tof_mark,energy_level_min=energy_level_min,energy_level_max=energy_level_max,chain_length=chain_length)
+        chains = find_chaines_in_mesh(group,time_dlt=time_dlt,tof_mark=tof_mark,energy_level_min=energy_level_min,energy_level_max=energy_level_max,tof_condition=tof_condition)
         if len(chains):
-            report += '\n\n\n'+name
+            report += '\n\n\n'+str(name)
             for chain in chains:
                 report += '\n' + chain.to_string()
     if output:            
@@ -990,29 +1012,68 @@ def find_chaines(frame,time_dlt=25,tof_mark=False,energy_level_min=8000,energy_l
         return report
                 
             
-def find_chaines_in_mesh(frame,time_dlt=25,tof_mark=False,energy_level_min=8000,energy_level_max=12000,chain_length=11):
-    resume = (frame['synchronization_time'].diff().abs() <time_dlt) & (frame['total_energy_A']>energy_level_min)& (frame['total_energy_A']<energy_level_max) & (frame['tof']== tof_mark)
-    event_num,i = 0,0
-    chains = []
-    chain = np.zeros(chain_length)
+def find_chaines_in_mesh(frame,time_dlt=35,tof_mark=False,energy_level_min=8000,energy_level_max=12000,tof_condition=True):
+    #selecting pairs of valid events and putting them into lists
+    #energy_conditions = (frame['total_energy_A']>energy_level_min)& (frame['total_energy_A']<energy_level_max)
+    resume = (frame['time'].diff().abs() <time_dlt) #& (frame['id']!=3)#&\
+#        energy_conditions & np.roll(energy_conditions,1) 
+#        ( (frame['back_strip_even']>0)  ) &\
+# | (frame['back_strip_odd']>0)\
+#(frame['tof']== tof_mark) &\
+#( frame['time'].diff()<300) &\
+#    frame = frame[resume]
+#    energy_conditions = (frame['total_energy_A']>energy_level_min)& (frame['total_energy_A']<energy_level_max)
+#    resume = energy_conditions & np.roll(energy_conditions,1)
+    if not resume.any():
+        return []
+    resume = np.array(resume, dtype = np.bool)
+    resume_back = np.roll(resume,-1)
+    resume = np.array(frame[resume].index, dtype = np.int)
+    resume_back = np.array(frame[resume_back].index, dtype = np.int)
     
-    size = len(resume)
-    for event_num in range(1,size):
-        if resume[event_num] == True:
-            if i == 0:
-                chain[i] = event_num-1
-                i += 1
-            chain[i] = event_num
-            i += 1
-            if i == chain_length - 1:
-                chains.append(frame[chain[:i+1]])
-                chain[:i+1] = 0
-                i = 0     
-        else:
-            if i > 0:
-                chains.append(frame[chain[:i+1]])
-                chain[:i+1] = 0
-                i = 0
+    #processing - collecting chains and putting them into one list
+    chains = []
+    i_pre = resume[0]
+    j_pre = resume_back[0]
+    columns = ['synchronization_time','total_energy_A','id','strip','back_strip_even','back_strip_odd','tof','time','channel']
+    chain = pd.DataFrame(frame.ix[[j_pre,i_pre]] [columns])
+    if len(resume) > 1:
+        for i,j in zip(resume[1:],resume_back[1:]):
+            if j != i_pre:
+                chain = chain[(chain['total_energy_A']>energy_level_min)& (chain['total_energy_A']<energy_level_max)]
+                if len(chain)>1:
+                    chains.append(chain)
+                else:
+                    chain = []
+                chain = pd.DataFrame(frame.ix[[j,i]] [columns])
+            elif j == i_pre:
+                chain = pd.concat([chain,frame.ix[[i]] [columns] ])
+            i_pre = i
+    chain = chain[(chain['total_energy_A']>energy_level_min)& (chain['total_energy_A']<energy_level_max)]
+    if len(chain)>1:
+        chains.append(chain)
+    
+    #processing - selecting chains which сonform energy conditions
+#    chains_new = []
+#    for i,chain in enumerate(chains):
+#        chain = chain[(chain['total_energy_A']>energy_level_min)& (chain['total_energy_A']<energy_level_max)]
+#        if chain.shape[0]:
+#            chains_new.append(chain)
+#    
+#    chains = chains_new
+    
+    #processing - removing all chains without tof-marked events    
+    if tof_condition:
+        indexes_ = []
+        for i,chain in enumerate(chains):
+            if not chain['tof'].any():
+                indexes_.append(i)
+                
+        for i in reversed(indexes_):
+            del chains[i]
+            
+    #postprocessing - making fine view of chain's frames
+        
     return chains
                 
     

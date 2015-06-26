@@ -98,11 +98,14 @@ if __name__ == '__main__':
 #    frame = read_files('tsn.35-tsn.61',energy_scale = True, strip_convert = True)#\
 #        clbr_front_filename='/home/eastwood/codes/Python_Idle/data_processing/Sep2014_calibrations/alpha_clbr.txt') #-tsn.61
 #READ DATA AND PLOT DISTRIBUTIONS 
-#    os.chdir('May_2015')
-#    frame1 = read_files('tsn.6-tsn.7',strip_convert=True)
-#    hist,hsum = get_front_spectrs(frame1,threshold=0.04)
-#    hist_b,hsum_b = get_back_spectrs(frame1,threshold=0.04)
-#    hist_side,hsum_side = get_front_spectrs(frame1,id_mark='==3',threshold=0.04)
+    os.chdir('June_2015')
+    frame1 = read_files('tsn.59',strip_convert=True,energy_scale=True,\
+        clbr_front_filename='/home/eastwood/codes/Python_Idle/data_processing/May_2015/front_calibrations.txt',\
+        clbr_back_filename='/home/eastwood/codes/Python_Idle/data_processing/May_2015/back_calibrations.txt',\
+        clbr_side_filename='/home/eastwood/codes/Python_Idle/data_processing/May_2015/side_coef_clbr.txt')
+    hist,hsum = get_front_spectrs(frame1,threshold=0.04,energy_scale=True)
+    hist_b,hsum_b = get_back_spectrs(frame1,threshold=0.04,energy_scale=True)
+    hist_side,hsum_side = get_front_spectrs(frame1,id_mark='==3',threshold=0.04,energy_scale=True)
 #READ AMERICAN DATA AND PLOT DISTRIBUTIONS 
 #     # example of counts and back distribution for a large file
 #    os.chdir('May_2015_AM')
@@ -172,10 +175,10 @@ if __name__ == '__main__':
 #CALIBRATE FRONT (OR BACK) ALPHA SPECTRS 
 #    import os
 #    os.chdir(r'./May_2015')
-#    #read data 
+    #read data 
 #    filenames = 'tsn.6,tsn.7,tsn.8,tsn.9,tsn.10,tsn.11,tsn.12'.split(',')
 #    start = time()
-#    #frame = read_files(filenames,strip_convert=False)
+    #frame = read_files(filenames,strip_convert=False)
 #    print time()-start
 #    start = time()
 #    hist,hist_b = pd.DataFrame(np.zeros((48,8192)),index=np.arange(1,49)),pd.DataFrame(np.zeros((128,8192)),index=np.arange(1,129))
@@ -187,8 +190,8 @@ if __name__ == '__main__':
 #        hist_b1,hsum_b1 = get_back_spectrs(file_,threshold=0.04,visualize=False)
 #        hist_b += hist_b1
 #        hsum_b += hsum_b1
-#    filenames = 'tsn.6-tsn.12'
-#    hist_b,hsum_b= get_back_spectrs(filenames,threshold=0.04)
+#    filenames = 'tsn.10-tsn.12'
+#    hist_b,hsum_b= get_back_spectrs(filenames,threshold=0.04,visualize=False)
 #    print time()-start
 #    xmin, xmax = 1100, 2100
 #    def get_calibration_properties():
@@ -216,7 +219,7 @@ if __name__ == '__main__':
 #        return calibration_properties, search_properties, filter_properties
 #        
 #    calibration_properties, search_properties, filter_properties = get_calibration_properties()
-##    #choose strips and calibrate them
+#    #choose strips and calibrate them
 #    start,stop = 1,10
 #    #output_filename = '/home/eastwood/codes/Python_Idle/data_processing/Sep2014_calibrations/alpha_back_clbr.txt'
 #    output_filename = None
@@ -248,59 +251,59 @@ if __name__ == '__main__':
 
 #   
 ##CALIBRATE ALPHA FOCAL-SIDE ENERGY SPECTRS   
-
-    os.chdir(r'./exp_data1')
-    frame = read_files('tsn.35-tsn.61',energy_scale = False, strip_convert = True)
-    side_coefs = get_calibration_coefficients('/home/eastwood/codes/Python_Idle/data_processing/Sep2014_calibrations/side_coef_clbr.txt')
-    front_coefs = get_calibration_coefficients('/home/eastwood/codes/Python_Idle/data_processing/Sep2014_calibrations/alpha_clbr.txt')
-    class record: pass
-    
-    #energy scale check-calibration
-    calibration_properties = record()
-    calibration_properties.visualize=True
-    calibration_properties.weighted_average_sigma = 14 #None#10
-    calibration_properties.dlt = 170 # параметр для определения области соответствия расчетного положения пиков (соотв. пропорции калибровочных энергий) и реальных найденных пиков (метод spectrum_tools.search_peaks), если реальные пики не находятся вблизи расчетных 
-                                    # в области dlt, то они заменяются на расчетные, в противном случае выбирается пик наиболее близкий к расчетному. see calibration.calibrate_area
-    calibration_properties.energies = [6040,6143,6264,6899.2,7137,7922,8699,9261]#[7137,7922,8699,9261]#[6040,6143,6264,8699,9261]# 
-    
-    #calibration of aggregative focal-side spectr
-    calibration_properties1 = record()
-    calibration_properties1.visualize=True
-    calibration_properties1.weighted_average_sigma = 10 #None#10
-    calibration_properties1.dlt = 60 # параметр для определения области соответствия расчетного положения пиков (соотв. пропорции калибровочных энергий) и реальных найденных пиков (метод spectrum_tools.search_peaks), если реальные пики не находятся вблизи расчетных 
-                                    # в области dlt, то они заменяются на расчетные, в противном случае выбирается пик наиболее близкий к расчетному. see calibration.calibrate_area
-    calibration_properties1.energies = [6040,6143,6264,6899.2,7137,7922,8699,9261]#[7137,7922,8699,9261]#[6040,6143,6264,8699,9261]# 
-    
-    search_properties = record() #for smooth spectrum
-    search_properties.widths=np.arange(1,10)
-    search_properties.wavelet= 'ricker'
-    search_properties.min_length=1.
-    search_properties.min_snr=0.7
-    search_properties.noise_perc= 0.3
-    
-    filter_properties = record()
-    filter_properties.window_smooth=7
-    filter_properties.smooth_wavelet='blackman'
-    filter_properties.background_options='BACK1_ORDER8,BACK1_INCLUDE_COMPTON' 
-    filter_properties.threshold = 4
-    
-    #калибровать отдельно по индексу
-    def processing(frame,ind_start,ind_stop,filename,side_coefs=side_coefs):
-        for ind in xrange(ind_start,ind_stop):
-            side_coefs[0,ind-1] = 2.4
-            side_coefs[1,ind-1] = 0
-            print side_coefs[0,ind-1],side_coefs[1,ind-1]
-            print 'strip: ',ind
-            coefs,peaks = make_focal_side_calibration(frame,front_coefs,side_coefs,calibration_properties,calibration_properties1,search_properties,filter_properties,ind = ind)  
-            print 'result: ',coefs
-            try:
-                a = coefs[1]
-                b = coefs[0]
-                print make_report(peaks,(a,b),ind,energies=calibration_properties.energies,filename = filename)[0]
-            except:
-                pass
-            
-    processing(frame,1,2,filename = '/home/eastwood/codes/Python_Idle/data_processing/May_2015/side_coef_clbr.txt')
+#
+#    os.chdir(r'./exp_data1')
+#    frame = read_files('tsn.35-tsn.61',energy_scale = False, strip_convert = True)
+#    side_coefs = get_calibration_coefficients('/home/eastwood/codes/Python_Idle/data_processing/Sep2014_calibrations/side_coef_clbr.txt')
+#    front_coefs = get_calibration_coefficients('/home/eastwood/codes/Python_Idle/data_processing/Sep2014_calibrations/alpha_clbr.txt')
+#    class record: pass
+#    
+#    #energy scale check-calibration
+#    calibration_properties = record()
+#    calibration_properties.visualize=True
+#    calibration_properties.weighted_average_sigma = 14 #None#10
+#    calibration_properties.dlt = 170 # параметр для определения области соответствия расчетного положения пиков (соотв. пропорции калибровочных энергий) и реальных найденных пиков (метод spectrum_tools.search_peaks), если реальные пики не находятся вблизи расчетных 
+#                                    # в области dlt, то они заменяются на расчетные, в противном случае выбирается пик наиболее близкий к расчетному. see calibration.calibrate_area
+#    calibration_properties.energies = [6040,6143,6264,6899.2,7137,7922,8699,9261]#[7137,7922,8699,9261]#[6040,6143,6264,8699,9261]# 
+#    
+#    #calibration of aggregative focal-side spectr
+#    calibration_properties1 = record()
+#    calibration_properties1.visualize=True
+#    calibration_properties1.weighted_average_sigma = 10 #None#10
+#    calibration_properties1.dlt = 60 # параметр для определения области соответствия расчетного положения пиков (соотв. пропорции калибровочных энергий) и реальных найденных пиков (метод spectrum_tools.search_peaks), если реальные пики не находятся вблизи расчетных 
+#                                    # в области dlt, то они заменяются на расчетные, в противном случае выбирается пик наиболее близкий к расчетному. see calibration.calibrate_area
+#    calibration_properties1.energies = [6040,6143,6264,6899.2,7137,7922,8699,9261]#[7137,7922,8699,9261]#[6040,6143,6264,8699,9261]# 
+#    
+#    search_properties = record() #for smooth spectrum
+#    search_properties.widths=np.arange(1,10)
+#    search_properties.wavelet= 'ricker'
+#    search_properties.min_length=1.
+#    search_properties.min_snr=0.7
+#    search_properties.noise_perc= 0.3
+#    
+#    filter_properties = record()
+#    filter_properties.window_smooth=7
+#    filter_properties.smooth_wavelet='blackman'
+#    filter_properties.background_options='BACK1_ORDER8,BACK1_INCLUDE_COMPTON' 
+#    filter_properties.threshold = 4
+#    
+#    #калибровать отдельно по индексу
+#    def processing(frame,ind_start,ind_stop,filename,side_coefs=side_coefs):
+#        for ind in xrange(ind_start,ind_stop):
+#            side_coefs[0,ind-1] = 2.4
+#            side_coefs[1,ind-1] = 0
+#            print side_coefs[0,ind-1],side_coefs[1,ind-1]
+#            print 'strip: ',ind
+#            coefs,peaks = make_focal_side_calibration(frame,front_coefs,side_coefs,calibration_properties,calibration_properties1,search_properties,filter_properties,ind = ind)  
+#            print 'result: ',coefs
+#            try:
+#                a = coefs[1]
+#                b = coefs[0]
+#                print make_report(peaks,(a,b),ind,energies=calibration_properties.energies,filename = filename)[0]
+#            except:
+#                pass
+#            
+#    processing(frame,1,2,filename = '/home/eastwood/codes/Python_Idle/data_processing/May_2015/side_coef_clbr.txt')
 #        
 #        
 ##CALIBRATE FOCAL FISSION SCALE
