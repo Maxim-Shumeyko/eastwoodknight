@@ -1083,10 +1083,10 @@ def find_chaines(frame,time_dlt=500000,depth=15000000,energy_level_min=8000,ener
 def find_chaines_in_mesh(frame,time_dlt=4000,depth=50000000,energy_level_min=8000,energy_level_max=12000):
     #selecting pairs of valid events and putting them into lists
     energy_conditions = (frame['total_energy_A']>energy_level_min)& (frame['total_energy_A']<energy_level_max)
+    frame = frame[energy_conditions]
     tof_conditions = frame['tof']>0
     resume = (frame['time'].diff().abs() <time_dlt) &\
-        energy_conditions & np.roll(energy_conditions,1)&\
-        np.roll(tof_conditions,1) & (~tof_conditions)
+        np.roll(tof_conditions,1) #& (~tof_conditions)
 
     if not resume.any():
         return []
@@ -1102,7 +1102,7 @@ def find_chaines_in_mesh(frame,time_dlt=4000,depth=50000000,energy_level_min=800
         for i,j in zip(resume_back,resume):
             chain = pd.DataFrame(frame.ix[[i,j]] [columns])
             time_conditions = (frame['time']>frame.ix[j]['time']) & (frame['time']<frame.ix[j]['time']+depth)
-            chain = pd.concat([chain,frame[time_conditions & energy_conditions][columns]])
+            chain = pd.concat([chain,frame[time_conditions&(~tof_conditions)][columns]])
             chains.append(chain)
             
     #postprocessing - making fine view of chain's frames
