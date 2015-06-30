@@ -1102,6 +1102,7 @@ def find_chaines_in_mesh(frame,time_dlt=4000,depth=50000000,energy_level_min=800
         for i,j in zip(resume_back,resume):
             chain = pd.DataFrame(frame.ix[[i,j]] [columns])
             time_conditions = (frame['time']>frame.ix[j]['time']) & (frame['time']<frame.ix[j]['time']+depth)
+
             chain = pd.concat([chain,frame[time_conditions&(~tof_conditions)][columns]])
             chains.append(chain)
             
