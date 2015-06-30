@@ -324,7 +324,7 @@ def read_file(filename,write_file=False,energy_scale=False,fission_energy_scale=
          diapason = 65536**2
          time_dev = np.array(np.r_[ [0],time[1:] - time[:-1] ],dtype='int64')
          time_stamps = (time_dev<0).nonzero()[0] #!!! can be problem of adding too much time to the time of file
-         print time_stamps
+         #print time_stamps
          time = time_correct(time_stamps,diapason)
         
      time_dev = np.array(np.r_[ [0],time[1:] - time[:-1] ],dtype='int64')
@@ -944,16 +944,17 @@ def get_total_energy(frame,scale = 'alpha'):
     содержащее координаты - номера фронтального и заднего стрипов.
     Output: frame (pd.DataFrame)
     """
+    frame1 = pd.DataFrame(frame)
     if scale == 'alpha':
         channel = 'channel'
         total_energy = 'total_energy_A'
     elif scale == 'fission':
         channel = 'fission_channel'
         total_energy = 'total_energy_F'
-    set_energies = np.array(frame[channel])
+    set_energies = np.array(frame1[channel])
     for i in np.arange(1,2): #complimented by the numbers of side detectors 
     
-        set_side1,set_front1, set_side2,set_front2 = get_focal_side_indexes(frame,i) # i - number of a side detector
+        set_side1,set_front1, set_side2,set_front2 = get_focal_side_indexes(frame1,i) # i - number of a side detector
         index0 = np.nonzero(set_front1)[0]
         set0 = set_energies[set_front1] + set_energies[set_side1]
         set_energies[index0] = set0
@@ -962,7 +963,7 @@ def get_total_energy(frame,scale = 'alpha'):
         set1 = set_energies[set_front2] + set_energies[set_side2]
         set_energies[index1] = set1
         
-    frame[total_energy] = pd.Series(set_energies)
+    frame1[total_energy] = pd.Series(set_energies)
          
 #        index0 = frame.ix[set_front1].index
 #        set0 = pd.Series(frame.ix[set_front1][channel].as_matrix() + frame.ix[set_side1][channel].as_matrix(),index=index0)
@@ -974,10 +975,10 @@ def get_total_energy(frame,scale = 'alpha'):
         #frame.ix[set_front1][total_energy] = frame.ix[set_front1][channel] + frame.ix[set_side1][channel]
         #frame.ix[set_front1][total_energy] = frame.ix[set_front1][channel] + frame.ix[set_side1][channel]
     
-    return frame
+    return frame1
 
 
-def find_chaines(frame,time_dlt=25,tof_mark=False,energy_level_min=8000,energy_level_max=12000,output = 'chains.txt',tof_condition=True):
+def find_chaines(frame,time_dlt=500000,depth=15000000,energy_level_min=8000,energy_level_max=12000,output = 'chains.txt'):
     """
     The function searches chains of alpha decays with given parameters.
     Input:
@@ -992,14 +993,16 @@ def find_chaines(frame,time_dlt=25,tof_mark=False,energy_level_min=8000,energy_l
     frame = frame[frame['id']!=3]
     report = ''
     for name,group in frame.groupby(['strip','back_strip_even']):
-        chains = find_chaines_in_mesh(group,time_dlt=time_dlt,tof_mark=tof_mark,energy_level_min=energy_level_min,energy_level_max=energy_level_max,tof_condition=tof_condition)
+        #chains = find_chaines_in_mesh(group,time_dlt=time_dlt,tof_mark=tof_mark,energy_level_min=energy_level_min,energy_level_max=energy_level_max,tof_condition=tof_condition)
+        chains = find_chaines_in_mesh_new(group,time_dlt=time_dlt,energy_level_min=energy_level_min,energy_level_max=energy_level_max)
         if len(chains):
             report += '\n\n\n'+str(name)
             for chain in chains:
                 report += '\n' + chain.to_string()
                 
     for name,group in frame.groupby(['strip','back_strip_odd']):
-        chains = find_chaines_in_mesh(group,time_dlt=time_dlt,tof_mark=tof_mark,energy_level_min=energy_level_min,energy_level_max=energy_level_max,tof_condition=tof_condition)
+        #chains = find_chaines_in_mesh_new(group,time_dlt=time_dlt,tof_mark=tof_mark,energy_level_min=energy_level_min,energy_level_max=energy_level_max,tof_condition=tof_condition)
+        chains = find_chaines_in_mesh_new(group,time_dlt=time_dlt,energy_level_min=energy_level_min,energy_level_max=energy_level_max)
         if len(chains):
             report += '\n\n\n'+str(name)
             for chain in chains:
@@ -1012,70 +1015,100 @@ def find_chaines(frame,time_dlt=25,tof_mark=False,energy_level_min=8000,energy_l
         return report
                 
             
-def find_chaines_in_mesh(frame,time_dlt=35,tof_mark=False,energy_level_min=8000,energy_level_max=12000,tof_condition=True):
+#def find_chaines_in_mesh(frame,time_dlt=35,tof_mark=False,energy_level_min=8000,energy_level_max=12000,tof_condition=True):
+#    #selecting pairs of valid events and putting them into lists
+#    #energy_conditions = (frame['total_energy_A']>energy_level_min)& (frame['total_energy_A']<energy_level_max)
+#    resume = (frame['time'].diff().abs() <time_dlt) & (frame['id']!=3)#&\
+##        energy_conditions & np.roll(energy_conditions,1) 
+##        ( (frame['back_strip_even']>0)  ) &\
+## | (frame['back_strip_odd']>0)\
+##(frame['tof']== tof_mark) &\
+##( frame['time'].diff()<300) &\
+##    frame = frame[resume]
+##    energy_conditions = (frame['total_energy_A']>energy_level_min)& (frame['total_energy_A']<energy_level_max)
+##    resume = energy_conditions & np.roll(energy_conditions,1)
+#    if not resume.any():
+#        return []
+#    resume = np.array(resume, dtype = np.bool)
+#    resume_back = np.roll(resume,-1)
+#    resume = np.array(frame[resume].index, dtype = np.int)
+#    resume_back = np.array(frame[resume_back].index, dtype = np.int)
+#    frame = frame.ix[np.r_[resume,resume_back]]
+#    #processing - collecting chains and putting them into one list
+#    chains = []
+#    i_pre = resume[0]
+#    j_pre = resume_back[0]
+#    columns = ['synchronization_time','total_energy_A','id','strip','back_strip_even','back_strip_odd','tof','time','channel']
+#    chain = pd.DataFrame(frame.ix[[j_pre,i_pre]] [columns])
+#    if len(resume) > 1:
+#        for i,j in zip(resume[1:],resume_back[1:]):
+#            if j != i_pre:
+#                chain = chain[(chain['total_energy_A']>energy_level_min)& (chain['total_energy_A']<energy_level_max)]
+#                if len(chain)>1:
+#                    chains.append(chain)
+#                else:
+#                    chain = []
+#                chain = pd.DataFrame(frame.ix[[j,i]] [columns])
+#            elif j == i_pre:
+#                chain = pd.concat([chain,frame.ix[[i]] [columns] ])
+#            i_pre = i
+#    chain = chain[(chain['total_energy_A']>energy_level_min)& (chain['total_energy_A']<energy_level_max)]
+#    if len(chain)>1:
+#        chains.append(chain)
+#    
+#    #processing - selecting chains which сonform energy conditions
+##    chains_new = []
+##    for i,chain in enumerate(chains):
+##        chain = chain[(chain['total_energy_A']>energy_level_min)& (chain['total_energy_A']<energy_level_max)]
+##        if chain.shape[0]:
+##            chains_new.append(chain)
+##    
+##    chains = chains_new
+#    
+#    #processing - removing all chains without tof-marked events    
+#    if tof_condition:
+#        indexes_ = []
+#        for i,chain in enumerate(chains):
+#            if not chain['tof'].any():
+#                indexes_.append(i)
+#                
+#        for i in reversed(indexes_):
+#            del chains[i]
+#            
+#    #postprocessing - making fine view of chain's frames
+#        
+#    return chains
+                
+
+def find_chaines_in_mesh(frame,time_dlt=4000,depth=50000000,energy_level_min=8000,energy_level_max=12000):
     #selecting pairs of valid events and putting them into lists
-    #energy_conditions = (frame['total_energy_A']>energy_level_min)& (frame['total_energy_A']<energy_level_max)
-    resume = (frame['time'].diff().abs() <time_dlt) #& (frame['id']!=3)#&\
-#        energy_conditions & np.roll(energy_conditions,1) 
-#        ( (frame['back_strip_even']>0)  ) &\
-# | (frame['back_strip_odd']>0)\
-#(frame['tof']== tof_mark) &\
-#( frame['time'].diff()<300) &\
-#    frame = frame[resume]
-#    energy_conditions = (frame['total_energy_A']>energy_level_min)& (frame['total_energy_A']<energy_level_max)
-#    resume = energy_conditions & np.roll(energy_conditions,1)
+    energy_conditions = (frame['total_energy_A']>energy_level_min)& (frame['total_energy_A']<energy_level_max)
+    tof_conditions = frame['tof']>0
+    resume = (frame['time'].diff().abs() <time_dlt) &\
+        energy_conditions & np.roll(energy_conditions,1)&\
+        np.roll(tof_conditions,1) & (~tof_conditions)
+
     if not resume.any():
         return []
     resume = np.array(resume, dtype = np.bool)
     resume_back = np.roll(resume,-1)
     resume = np.array(frame[resume].index, dtype = np.int)
     resume_back = np.array(frame[resume_back].index, dtype = np.int)
-    
     #processing - collecting chains and putting them into one list
     chains = []
-    i_pre = resume[0]
-    j_pre = resume_back[0]
     columns = ['synchronization_time','total_energy_A','id','strip','back_strip_even','back_strip_odd','tof','time','channel']
-    chain = pd.DataFrame(frame.ix[[j_pre,i_pre]] [columns])
-    if len(resume) > 1:
-        for i,j in zip(resume[1:],resume_back[1:]):
-            if j != i_pre:
-                chain = chain[(chain['total_energy_A']>energy_level_min)& (chain['total_energy_A']<energy_level_max)]
-                if len(chain)>1:
-                    chains.append(chain)
-                else:
-                    chain = []
-                chain = pd.DataFrame(frame.ix[[j,i]] [columns])
-            elif j == i_pre:
-                chain = pd.concat([chain,frame.ix[[i]] [columns] ])
-            i_pre = i
-    chain = chain[(chain['total_energy_A']>energy_level_min)& (chain['total_energy_A']<energy_level_max)]
-    if len(chain)>1:
-        chains.append(chain)
     
-    #processing - selecting chains which сonform energy conditions
-#    chains_new = []
-#    for i,chain in enumerate(chains):
-#        chain = chain[(chain['total_energy_A']>energy_level_min)& (chain['total_energy_A']<energy_level_max)]
-#        if chain.shape[0]:
-#            chains_new.append(chain)
-#    
-#    chains = chains_new
-    
-    #processing - removing all chains without tof-marked events    
-    if tof_condition:
-        indexes_ = []
-        for i,chain in enumerate(chains):
-            if not chain['tof'].any():
-                indexes_.append(i)
-                
-        for i in reversed(indexes_):
-            del chains[i]
+    if len(resume) > 0:
+        for i,j in zip(resume_back,resume):
+            chain = pd.DataFrame(frame.ix[[i,j]] [columns])
+            time_conditions = (frame['time']>frame.ix[j]['time']) & (frame['time']<frame.ix[j]['time']+depth)
+            chain = pd.concat([chain,frame[time_conditions & energy_conditions][columns]])
+            chains.append(chain)
             
     #postprocessing - making fine view of chain's frames
         
     return chains
-                
+
     
 def read_times(filename):
      data = np.fromfile(filename, dtype = 'uint16', count = -1, sep = '').reshape(-1,12)[:,0:5]
