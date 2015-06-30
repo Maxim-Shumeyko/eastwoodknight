@@ -151,7 +151,7 @@ def calibrate_area(xsample,sample,xmin,xmax,calibration_properties,filter_proper
         show_spectrs(xsample0,sample0,xsample,xmin,xmax,xpeaks,ypeaks,sample,energies,solution=None,title='Error report')
         raise Calibration_Error,"Some peaks weren't indentificated in calibration procedure, you should change the parameters."
         
-    k = 15
+    k = len(energies)*2
     if len(xpeaks) > k:
         indx = ypeaks.argsort()
         ypeaks = ypeaks[indx][-k:]
@@ -322,7 +322,7 @@ if __name__ == '__main__':
     filter_properties.threshold= 3
     
 #    #choose strips and calibrate them
-#    start,stop = 65,128
+    start,stop = 65,128
 #    #output_filename = '/home/eastwood/codes/Python_Idle/data_processing/Sep2014_calibrations/alpha_back_clbr.txt'
-#    output_filename = None
-#    xpeaks, coefs = calibrate_spectr(start,stop,xmin,xmax,hist,calibration_properties,filter_properties,search_properties,output_filename = output_filename)
+    output_filename = None
+    xpeaks, coefs = calibrate_spectr(start,stop,xmin,xmax,hist,calibration_properties,filter_properties,search_properties,output_filename = output_filename)
